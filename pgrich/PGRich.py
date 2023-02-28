@@ -1,9 +1,92 @@
+import os
+from typing import Optional, Self
+
 import psycopg2
-import rich
+import rich.console
+import rich.panel
+from rich import inspect
+
+# Useful reference material on PostgreSQL metadata:
+#
+# https://www.postgresql.org/docs/current/functions-info.html
+# https://www.postgresql.org/docs/current/runtime-config-preset.html - Show xxxx options - server
+# https://www.postgresql.org/docs/current/runtime-config-client.html - Show xxxx options - client
+
+# PostgreSQL Python interface documentation:
+#
+# https://www.psycopg.org/docs/index.html
+
+# Rich documentation
+#
+# https://rich.readthedocs.io/en/stable/index.html
 
 
-def main():
-    rich.inspect(psycopg2)
+# Console object for controlling Rich output
+console = rich.console.Console()
+
+
+def get_connection_string() -> Optional[str]:
+    try:
+        pwd = os.environ["PGPW"]
+    except Exception as err:
+        print(f"** No PGPW environment variable set")
+        return None
+
+    connection_string = f"host=127.0.0.1 port=5432 user=postgres password={pwd}"
+    return connection_string
+
+
+class BasicDBInfo:
+    def __init__(self: Self):
+        self.session_user = ""  # Used to create the session
+        self.current_user = ""  # Active role - same as session_user unless something like Set Role has updated it for the session
+        self.current_database = ""  # current_database and current_catalog are the same thing 'database' is pg, 'catalog' is SQL standard.
+        self.pg_version = ""
+
+
+def read_basics(conn) -> BasicDBInfo:
+    cur = conn.cursor()
+    cur.execute("SELECT session_user, current_user, current_database(), version();")
+    f = cur.fetchone()
+    basics = BasicDBInfo()
+    basics.session_user = f[0]
+    basics.current_user = f[1]
+    basics.current_database = f[2]
+    basics.pg_version = f[3]
+
+    return basics
+
+
+def main() -> None:
+    connection_string: Optional[str] = get_connection_string()
+
+    if connection_string == None:
+        return
+
+    try:
+        conn = psycopg2.connect(connection_string)
+    except Exception as err:
+        console.print(f"[red]** failed to connect using[/red] {connection_string}")
+        return
+
+    # Second time round the loop does a set role, and shows how this modifies the 'Current user' value reported.
+    for i in [1, 2]:
+        if i == 2:
+            conn.cursor().execute("Set Role pg_read_all_data ")
+
+        basics: BasicDBInfo = read_basics(conn)
+        basics_str = (
+            f""
+            + f"Session user: {basics.session_user}\n"
+            + f"Current user: {basics.current_user}\n"
+            + f"Current database (=catalog): {basics.current_database}\n"
+            + f"PG Version: {basics.pg_version}"
+        )
+
+        panel = rich.panel.Panel.fit(basics_str)
+        console.print(panel)
+
+    rich.inspect(conn.info)
 
 
 if __name__ == "__main__":
