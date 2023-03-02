@@ -63,14 +63,20 @@ def main() -> None:
     if connection_string == None:
         return
 
+    # https://www.psycopg.org/docs/module.html#psycopg2.connect
+    # https://www.postgresql.org/docs/current/libpq-envars.html
+    # https://www.postgresql.org/docs/current/libpq-pgpass.html
     try:
         conn = psycopg2.connect(connection_string)
     except Exception as err:
         console.print(f"[red]** failed to connect using[/red] {connection_string}")
         return
 
-    # Second time round the loop does a set role, and shows how this modifies the 'Current user' value reported.
-    for i in [1, 2]:
+    # If turned on, the second time round the loop does a 'set role' to the built-in read-only role, and shows how
+    # this modifies the 'Current user' value reported.
+    switch_to_read_role = False
+
+    for i in [1, 2] if switch_to_read_role else [1]:
         if i == 2:
             conn.cursor().execute("Set Role pg_read_all_data ")
 
@@ -86,7 +92,7 @@ def main() -> None:
         panel = rich.panel.Panel.fit(basics_str)
         console.print(panel)
 
-    rich.inspect(conn.info)
+    # rich.inspect(conn.info)
 
 
 if __name__ == "__main__":
