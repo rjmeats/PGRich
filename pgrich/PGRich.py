@@ -32,7 +32,8 @@ def get_connection_string() -> Optional[str]:
         print(f"** No PGPW environment variable set")
         return None
 
-    connection_string = f"host=127.0.0.1 port=5432 user=postgres password={pwd}"
+    # connection_string = f"host=127.0.0.1 port=5432 user=postgres password={pwd}"
+    connection_string = f"user=postgres password={pwd}"
     return connection_string
 
 
@@ -89,10 +90,36 @@ def main() -> None:
             + f"PG Version: {basics.pg_version}"
         )
 
-        panel = rich.panel.Panel.fit(basics_str)
+        panel = rich.panel.Panel.fit(basics_str, title="Session info")
         console.print(panel)
 
-    # rich.inspect(conn.info)
+    # Show info about the connection
+
+    conn_info = conn.info
+    conn_info_str = (
+        f""
+        + f"DSN : {conn.dsn}\n"
+        + f"DSN parameters: {conn_info.dsn_parameters}\n"
+        + f"DBname : {conn_info.dbname}\n"
+        + f"User : {conn_info.user}\n"
+        + f"Password : {'*' * len(conn_info.password)}\n"
+        + f"Host : {conn_info.host}\n"
+        + f"Port : {conn_info.port}\n"
+        + f"Options : {conn_info.options}\n"
+        + f"Status : {conn_info.status}\n"
+        + f"Protocol version: {conn_info.protocol_version}\n"
+        + f"Server version: {conn_info.server_version}\n"
+        + f"Used password : {conn_info.used_password}\n"
+        + f"SSL in use : {conn_info.ssl_in_use}\n"
+        + f"Autocommit: {conn.autocommit}\n"
+        + f"Isolation level: {conn.isolation_level}\n"
+        + f"Read-only: {conn.readonly}\n"
+        + f"Async: {conn.async_}\n"
+        + f"Client encoding: {conn.encoding}"
+    )
+
+    panel = rich.panel.Panel.fit(conn_info_str, title="Connection info")
+    console.print(panel)
 
 
 if __name__ == "__main__":
