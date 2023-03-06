@@ -38,14 +38,17 @@ def get_connection_string() -> Optional[str]:
 
 
 class BasicDBInfo:
-    def __init__(self: Self):
+    def __init__(self):
         self.session_user = ""  # Used to create the session
         self.current_user = ""  # Active role - same as session_user unless something like Set Role has updated it for the session
         self.current_database = ""  # current_database and current_catalog are the same thing 'database' is pg, 'catalog' is SQL standard.
         self.pg_version = ""
 
 
-def read_basics(conn) -> BasicDBInfo:
+# NB Seem to need to use the '.extensions' module to do Typing of the connection object:
+# https://www.psycopg.org/docs/extensions.html
+# https://www.psycopg.org/docs/extensions.html
+def read_basics(conn: psycopg2.extensions.connection) -> tuple[BasicDBInfo, str]:
     cur = conn.cursor()
     cur.execute("SELECT session_user, current_user, current_database(), version();")
     f = cur.fetchone()
@@ -55,7 +58,15 @@ def read_basics(conn) -> BasicDBInfo:
     basics.current_database = f[2]
     basics.pg_version = f[3]
 
-    return basics
+    basics_str = (
+        f""
+        + f"Session user: {basics.session_user}\n"
+        + f"Current user: {basics.current_user}\n"
+        + f"Current database (=catalog): {basics.current_database}\n"
+        + f"PG Version: {basics.pg_version}"
+    )
+
+    return basics, basics_str
 
 
 def main() -> None:
@@ -81,16 +92,18 @@ def main() -> None:
         if i == 2:
             conn.cursor().execute("Set Role pg_read_all_data ")
 
-        basics: BasicDBInfo = read_basics(conn)
-        basics_str = (
-            f""
-            + f"Session user: {basics.session_user}\n"
-            + f"Current user: {basics.current_user}\n"
-            + f"Current database (=catalog): {basics.current_database}\n"
-            + f"PG Version: {basics.pg_version}"
-        )
+        # Type-checking syntax restriction. Would like to do something like this:
+        #   (basics, basics_str) : tuple[BasicDBInfo, str] = read_basics(conn)
+        # but it's not allowed by Python typing spec.
+        # If we do just:
+        #   basics, basics_str = read_basics(conn)
+        # then the variables end up with type 'Any'
+        inspect(conn)
+        result: tuple[BasicDBInfo, str] = read_basics(conn)
+        basics: BasicDBInfo = result[0]
+        basics_str: str = result[1]
 
-        panel = rich.panel.Panel.fit(basics_str, title="Session info")
+        panel = rich.panel.Panel(basics_str, title="Session info")
         console.print(panel)
 
     # Show info about the connection
@@ -118,7 +131,7 @@ def main() -> None:
         + f"Client encoding: {conn.encoding}"
     )
 
-    panel = rich.panel.Panel.fit(conn_info_str, title="Connection info")
+    panel = rich.panel.Panel(conn_info_str, title="Connection info")
     console.print(panel)
 
 
