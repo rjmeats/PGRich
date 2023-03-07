@@ -1,10 +1,15 @@
+# Allow forward types in annotations. Python may never implement this as the default.
+from __future__ import annotations
+
 import os
-from typing import Optional, Self
+from typing import Optional, Self, TypeAlias
 
 import psycopg2
 import rich.console
 import rich.panel
 from rich import inspect
+
+#
 
 # Useful reference material on PostgreSQL metadata:
 #
@@ -19,6 +24,13 @@ from rich import inspect
 # Rich documentation
 #
 # https://rich.readthedocs.io/en/stable/index.html
+
+
+# Type aliases for easier reference to Postgres types
+# NB Seem to need to use the '.extensions' module to do Typing of the connection object:
+# https://www.psycopg.org/docs/extensions.html
+# https://www.psycopg.org/docs/extensions.html
+pg_connection_type: TypeAlias = psycopg2.extensions.connection
 
 
 # Console object for controlling Rich output
@@ -37,7 +49,7 @@ def get_connection_string() -> Optional[str]:
     return connection_string
 
 
-class BasicDBInfo:
+class BasicSessionInfo:
     def __init__(self):
         self.session_user = ""  # Used to create the session
         self.current_user = ""  # Active role - same as session_user unless something like Set Role has updated it for the session
@@ -45,14 +57,11 @@ class BasicDBInfo:
         self.pg_version = ""
 
 
-# NB Seem to need to use the '.extensions' module to do Typing of the connection object:
-# https://www.psycopg.org/docs/extensions.html
-# https://www.psycopg.org/docs/extensions.html
-def read_basics(conn: psycopg2.extensions.connection) -> tuple[BasicDBInfo, str]:
+def read_session_basics(conn: pg_connection_type) -> tuple[BasicSessionInfo, str]:
     cur = conn.cursor()
     cur.execute("SELECT session_user, current_user, current_database(), version();")
     f = cur.fetchone()
-    basics = BasicDBInfo()
+    basics = BasicSessionInfo()
     basics.session_user = f[0]
     basics.current_user = f[1]
     basics.current_database = f[2]
@@ -67,6 +76,70 @@ def read_basics(conn: psycopg2.extensions.connection) -> tuple[BasicDBInfo, str]
     )
 
     return basics, basics_str
+
+
+def summarise_connection_info(conn: pg_connection_type) -> str:
+    conn_info = conn.info
+    conn_info_str = (
+        f""
+        + f"DSN : {conn.dsn}\n"
+        + f"DSN parameters: {conn_info.dsn_parameters}\n"
+        + f"DBname : {conn_info.dbname}\n"
+        + f"User : {conn_info.user}\n"
+        + f"Password : {'*' * len(conn_info.password)}\n"
+        + f"Host : {conn_info.host}\n"
+        + f"Port : {conn_info.port}\n"
+        + f"Options : {conn_info.options}\n"
+        + f"Status : {conn_info.status}\n"
+        + f"Protocol version: {conn_info.protocol_version}\n"
+        + f"Server version: {conn_info.server_version}\n"
+        + f"Used password : {conn_info.used_password}\n"
+        + f"SSL in use : {conn_info.ssl_in_use}\n"
+        + f"Autocommit: {conn.autocommit}\n"
+        + f"Isolation level: {conn.isolation_level}\n"
+        + f"Read-only: {conn.readonly}\n"
+        + f"Async: {conn.async_}\n"
+        + f"Client encoding: {conn.encoding}"
+    )
+
+    return conn_info_str
+
+
+class RoleInfo:
+    def __init__(self, rolename: str, is_super_user: bool, can_login: bool, oid: int):
+        self.rolename = rolename
+        self.is_super_user = is_super_user
+        self.can_login = can_login
+        self.oid = oid
+
+    # https://www.postgresql.org/docs/15/view-pg-roles.html
+    def read_role_info(conn: pg_connection_type) -> list[RoleInfo]:
+        cur = conn.cursor()
+        cur.execute("SELECT rolname, rolsuper, rolcanlogin, oid from pg_roles order by rolname;")
+
+        l = [RoleInfo(record[0], record[1], record[2], record[3]) for record in cur]
+        # for record in cur:
+        #    print(record)
+        #    for i in range(0, len(record)):
+        #        print(i, record[i], type(record[i]))
+
+        return l
+
+    @classmethod
+    def summarise_roles(cls, roles_list: list[RoleInfo], current_role: str) -> str:
+        s = ""
+        for role in roles_list:
+            if role.rolename == current_role:
+                s += f"[black on white]{role.rolename}[/]"
+            else:
+                s += f"{role.rolename}"
+            if role.can_login:
+                s += " Login"
+            if role.is_super_user:
+                s += " = Super user"
+            s += "\n"
+
+        return s
 
 
 def main() -> None:
@@ -98,40 +171,21 @@ def main() -> None:
         # If we do just:
         #   basics, basics_str = read_basics(conn)
         # then the variables end up with type 'Any'
-        inspect(conn)
-        result: tuple[BasicDBInfo, str] = read_basics(conn)
-        basics: BasicDBInfo = result[0]
+        result: tuple[BasicSessionInfo, str] = read_session_basics(conn)
+        basics: BasicSessionInfo = result[0]
         basics_str: str = result[1]
 
         panel = rich.panel.Panel(basics_str, title="Session info")
         console.print(panel)
 
     # Show info about the connection
-
-    conn_info = conn.info
-    conn_info_str = (
-        f""
-        + f"DSN : {conn.dsn}\n"
-        + f"DSN parameters: {conn_info.dsn_parameters}\n"
-        + f"DBname : {conn_info.dbname}\n"
-        + f"User : {conn_info.user}\n"
-        + f"Password : {'*' * len(conn_info.password)}\n"
-        + f"Host : {conn_info.host}\n"
-        + f"Port : {conn_info.port}\n"
-        + f"Options : {conn_info.options}\n"
-        + f"Status : {conn_info.status}\n"
-        + f"Protocol version: {conn_info.protocol_version}\n"
-        + f"Server version: {conn_info.server_version}\n"
-        + f"Used password : {conn_info.used_password}\n"
-        + f"SSL in use : {conn_info.ssl_in_use}\n"
-        + f"Autocommit: {conn.autocommit}\n"
-        + f"Isolation level: {conn.isolation_level}\n"
-        + f"Read-only: {conn.readonly}\n"
-        + f"Async: {conn.async_}\n"
-        + f"Client encoding: {conn.encoding}"
-    )
-
+    conn_info_str = summarise_connection_info(conn)
     panel = rich.panel.Panel(conn_info_str, title="Connection info")
+    console.print(panel)
+
+    roles_list = RoleInfo.read_role_info(conn)
+    roles_info_str = RoleInfo.summarise_roles(roles_list, basics.current_user)
+    panel = rich.panel.Panel(roles_info_str, title="Roles info")
     console.print(panel)
 
 
