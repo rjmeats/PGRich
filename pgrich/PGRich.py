@@ -128,16 +128,33 @@ class RoleInfo:
     @classmethod
     def summarise_roles(cls, roles_list: list[RoleInfo], current_role: str) -> str:
         s = ""
+        unlisted_pg_roles_count = 0
         for role in roles_list:
-            if role.rolename == current_role:
-                s += f"[black on white]{role.rolename}[/]"
+            if role.rolename.startswith("pg"):
+                if role.rolename in [current_role, "pg_read_all_data", "pg_write_all_data"]:
+                    include_role = True
+                elif role.can_login or role.is_super_user:
+                    include_role = True
+                else:
+                    # Just count these pg_.. roles rather than listing them all.
+                    unlisted_pg_roles_count += 1
+                    include_role = False
             else:
-                s += f"{role.rolename}"
-            if role.can_login:
-                s += " Login"
-            if role.is_super_user:
-                s += " = Super user"
-            s += "\n"
+                include_role = True
+            if include_role:
+                if role.rolename == current_role:
+                    s += f"[black on white]{role.rolename}[/]"
+                else:
+                    s += f"{role.rolename}"
+                if role.can_login:
+                    s += " Login"
+                if role.is_super_user:
+                    s += " Super-user"
+                s += "\n"
+
+        if unlisted_pg_roles_count > 0:
+            plural = "s" if unlisted_pg_roles_count > 1 else ""
+            s += f".. and {unlisted_pg_roles_count} other pg_xxx role{plural}"
 
         return s
 
@@ -163,7 +180,7 @@ def main() -> None:
 
     for i in [1, 2] if switch_to_read_role else [1]:
         if i == 2:
-            conn.cursor().execute("Set Role pg_read_all_data ")
+            conn.cursor().execute("Set Role pg_read_all_data")
 
         # Type-checking syntax restriction. Would like to do something like this:
         #   (basics, basics_str) : tuple[BasicDBInfo, str] = read_basics(conn)
