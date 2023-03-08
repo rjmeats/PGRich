@@ -159,6 +159,42 @@ class RoleInfo:
         return s
 
 
+class TablespaceInfo:
+    def __init__(self, tablespace_name: str, owner_oid, owner: str, oid: int, size: int):
+        self.name = tablespace_name
+        self.owner_oid = owner_oid
+        self.owner = owner
+        self.oid = oid
+        self.size = size
+
+    # https://www.postgresql.org/docs/15/catalog-pg-tablespace.html
+    # https://www.postgresql.org/docs/15/functions-admin.html
+    # https://www.postgresql.org/docs/15/functions-info.html
+    # Could also include info from pg_tablespace_location and pg_tablespace_databases functions
+    # Also see psql \db+ command
+    # Location seems to be blank (=default location?) in basic installed database.
+    def read_tablespace_info(conn: pg_connection_type) -> list[TablespaceInfo]:
+        cur = conn.cursor()
+        query = """select t.spcname, t.spcowner, r.rolname, t.oid, pg_tablespace_size(t.oid)
+                from pg_tablespace t join pg_roles r on t.spcowner = r.oid
+                order by t.spcname;"""
+        cur.execute(query)
+
+        l = [
+            TablespaceInfo(record[0], record[1], record[2], record[3], record[4]) for record in cur
+        ]
+
+        return l
+
+    @classmethod
+    def summarise_tablespaces(cls, ts_list: list[TablespaceInfo]) -> str:
+        s = ""
+        for ts in ts_list:
+            size_in_mb: float = ts.size / 1024 / 1024
+            s += f"{ts.name} : owner={ts.owner} : size={size_in_mb:.1f} MB\n"
+        return s.strip()
+
+
 def main() -> None:
     connection_string: Optional[str] = get_connection_string()
 
@@ -203,6 +239,11 @@ def main() -> None:
     roles_list = RoleInfo.read_role_info(conn)
     roles_info_str = RoleInfo.summarise_roles(roles_list, basics.current_user)
     panel = rich.panel.Panel(roles_info_str, title="Roles info")
+    console.print(panel)
+
+    ts_list = TablespaceInfo.read_tablespace_info(conn)
+    ts_info_str = TablespaceInfo.summarise_tablespaces(ts_list)
+    panel = rich.panel.Panel(ts_info_str, title="Tablespace info")
     console.print(panel)
 
 
