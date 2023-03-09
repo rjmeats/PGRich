@@ -206,6 +206,7 @@ class DatabaseInfo:
         oid: int,
         encoding_id: int,
         encoding_name: str,
+        default_tablespace: str,
     ):
         self.name = database_name
         self.owner_oid = owner_oid
@@ -213,18 +214,23 @@ class DatabaseInfo:
         self.oid = oid
         self.encoding_id = encoding_id
         self.encoding_name = encoding_name
+        self.default_tablespace = default_tablespace
 
     # https://www.postgresql.org/docs/current/catalog-pg-database.html
     # https://www.postgresql.org/docs/current/functions-info.html#PG-ENCODING-TO-CHAR
     def read_database_info(conn: pg_connection_type) -> list[DatabaseInfo]:
         cur = conn.cursor()
-        query = """select db.datname, db.datdba, r.rolname, db.oid, db.encoding, pg_encoding_to_char(db.encoding)
-                from pg_database db join pg_roles r on db.datdba = r.oid
+        query = """select db.datname, db.datdba, r.rolname, db.oid, db.encoding, pg_encoding_to_char(db.encoding), ts.spcname
+                from pg_database db 
+		        join pg_roles r on db.datdba = r.oid
+		        join pg_tablespace ts on db.dattablespace = ts.oid
                 order by db.datname;"""
         cur.execute(query)
 
         l = [
-            DatabaseInfo(record[0], record[1], record[2], record[3], record[4], record[5])
+            DatabaseInfo(
+                record[0], record[1], record[2], record[3], record[4], record[5], record[6]
+            )
             for record in cur
         ]
 
@@ -238,7 +244,7 @@ class DatabaseInfo:
                 s += f"[black on white]{db.name}[/]"
             else:
                 s += f"{db.name}"
-            s += f" : owner={db.owner} : encoding={db.encoding_name}\n"
+            s += f" : owner={db.owner} : encoding={db.encoding_name} : tablespace={db.default_tablespace}\n"
         return s.strip()
 
 
