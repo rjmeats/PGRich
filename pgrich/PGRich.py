@@ -107,7 +107,7 @@ def summarise_connection_info(conn: pg_connection_type) -> str:
 
 class RoleInfo:
     def __init__(self, rolename: str, is_super_user: bool, can_login: bool, oid: int):
-        self.rolename = rolename
+        self.name = rolename
         self.is_super_user = is_super_user
         self.can_login = can_login
         self.oid = oid
@@ -130,8 +130,8 @@ class RoleInfo:
         s = ""
         unlisted_pg_roles_count = 0
         for role in roles_list:
-            if role.rolename.startswith("pg"):
-                if role.rolename in [current_role, "pg_read_all_data", "pg_write_all_data"]:
+            if role.name.startswith("pg"):
+                if role.name in [current_role, "pg_read_all_data", "pg_write_all_data"]:
                     include_role = True
                 elif role.can_login or role.is_super_user:
                     include_role = True
@@ -142,10 +142,10 @@ class RoleInfo:
             else:
                 include_role = True
             if include_role:
-                if role.rolename == current_role:
-                    s += f"[black on white]{role.rolename}[/]"
+                if role.name == current_role:
+                    s += f"[black on white]{role.name}[/]"
                 else:
-                    s += f"{role.rolename}"
+                    s += f"{role.name}"
                 if role.can_login:
                     s += " Login"
                 if role.is_super_user:
@@ -166,6 +166,7 @@ class TablespaceInfo:
         self.owner = owner
         self.oid = oid
         self.size = size
+        self.file_location = "[yellow on red]????[/]"
 
     # https://www.postgresql.org/docs/15/catalog-pg-tablespace.html
     # https://www.postgresql.org/docs/15/functions-admin.html
@@ -173,6 +174,7 @@ class TablespaceInfo:
     # Could also include info from pg_tablespace_location and pg_tablespace_databases functions
     # Also see psql \db+ command
     # Location seems to be blank (=default location?) in basic installed database.
+    # ??? How to query the file location information ?
     def read_tablespace_info(conn: pg_connection_type) -> list[TablespaceInfo]:
         cur = conn.cursor()
         query = """select t.spcname, t.spcowner, r.rolname, t.oid, pg_tablespace_size(t.oid)
@@ -191,7 +193,52 @@ class TablespaceInfo:
         s = ""
         for ts in ts_list:
             size_in_mb: float = ts.size / 1024 / 1024
-            s += f"{ts.name} : owner={ts.owner} : size={size_in_mb:.1f} MB\n"
+            s += f'{ts.name} : owner={ts.owner} : size={size_in_mb:.1f} MB : location="{ts.file_location}"\n'
+        return s.strip()
+
+
+class DatabaseInfo:
+    def __init__(
+        self,
+        database_name: str,
+        owner_oid,
+        owner: str,
+        oid: int,
+        encoding_id: int,
+        encoding_name: str,
+    ):
+        self.name = database_name
+        self.owner_oid = owner_oid
+        self.owner = owner
+        self.oid = oid
+        self.encoding_id = encoding_id
+        self.encoding_name = encoding_name
+
+    # https://www.postgresql.org/docs/current/catalog-pg-database.html
+    # https://www.postgresql.org/docs/current/functions-info.html#PG-ENCODING-TO-CHAR
+    def read_database_info(conn: pg_connection_type) -> list[DatabaseInfo]:
+        cur = conn.cursor()
+        query = """select db.datname, db.datdba, r.rolname, db.oid, db.encoding, pg_encoding_to_char(db.encoding)
+                from pg_database db join pg_roles r on db.datdba = r.oid
+                order by db.datname;"""
+        cur.execute(query)
+
+        l = [
+            DatabaseInfo(record[0], record[1], record[2], record[3], record[4], record[5])
+            for record in cur
+        ]
+
+        return l
+
+    @classmethod
+    def summarise_databases(cls, db_list: list[DatabaseInfo], current_db) -> str:
+        s = ""
+        for db in db_list:
+            if db.name == current_db:
+                s += f"[black on white]{db.name}[/]"
+            else:
+                s += f"{db.name}"
+            s += f" : owner={db.owner} : encoding={db.encoding_name}\n"
         return s.strip()
 
 
@@ -244,6 +291,11 @@ def main() -> None:
     ts_list = TablespaceInfo.read_tablespace_info(conn)
     ts_info_str = TablespaceInfo.summarise_tablespaces(ts_list)
     panel = rich.panel.Panel(ts_info_str, title="Tablespace info")
+    console.print(panel)
+
+    db_list = DatabaseInfo.read_database_info(conn)
+    db_info_str = DatabaseInfo.summarise_databases(db_list, basics.current_database)
+    panel = rich.panel.Panel(db_info_str, title="Database info")
     console.print(panel)
 
 
