@@ -218,6 +218,7 @@ class DatabaseInfo:
 
     # https://www.postgresql.org/docs/current/catalog-pg-database.html
     # https://www.postgresql.org/docs/current/functions-info.html#PG-ENCODING-TO-CHAR
+    # A 'Catalog' in SQL Standard terms.
     def read_database_info(conn: pg_connection_type) -> list[DatabaseInfo]:
         cur = conn.cursor()
         query = """select db.datname, db.datdba, r.rolname, db.oid, db.encoding, pg_encoding_to_char(db.encoding), ts.spcname
@@ -245,6 +246,50 @@ class DatabaseInfo:
             else:
                 s += f"{db.name}"
             s += f" : owner={db.owner} : encoding={db.encoding_name} : tablespace={db.default_tablespace}\n"
+        return s.strip()
+
+
+class SchemaInfo:
+    standard_pg_schema_descriptions: dict[str, str] = {
+        "information_schema": "SQL Standard metadata - see https://www.postgresql.org/docs/15/information-schema.html",
+        "pg_catalog": "Postgres metadata (e.g. pg_... tables)",
+        "pg_toast": "Storage of extended/large objects",
+        "public": "Default schema",
+    }
+
+    def __init__(
+        self,
+        schema_name: str,
+        owner_oid,
+        owner: str,
+        oid: int,
+    ):
+        self.name = schema_name
+        self.owner_oid = owner_oid
+        self.owner = owner
+        self.oid = oid
+
+    # AKA namespace
+    # https://www.postgresql.org/docs/15/ddl-schemas.html
+    # https://www.postgresql.org/docs/current/catalog-pg-namespace.html
+    def read_schema_info(conn: pg_connection_type) -> list[SchemaInfo]:
+        cur = conn.cursor()
+        query = """select ns.nspname, ns.nspowner, r.rolname, ns.oid
+                from pg_namespace ns
+		        join pg_roles r on ns.nspowner = r.oid
+                order by ns.nspname;"""
+        cur.execute(query)
+
+        l = [SchemaInfo(record[0], record[1], record[2], record[3]) for record in cur]
+
+        return l
+
+    @classmethod
+    def summarise_schemas(cls, sc_list: list[SchemaInfo]) -> str:
+        s = ""
+        for sc in sc_list:
+            description = SchemaInfo.standard_pg_schema_descriptions.get(sc.name, "-")
+            s += f"{sc.name} : owner={sc.owner} : description = {description}\n"
         return s.strip()
 
 
@@ -302,6 +347,11 @@ def main() -> None:
     db_list = DatabaseInfo.read_database_info(conn)
     db_info_str = DatabaseInfo.summarise_databases(db_list, basics.current_database)
     panel = rich.panel.Panel(db_info_str, title="Database info")
+    console.print(panel)
+
+    sc_list = SchemaInfo.read_schema_info(conn)
+    sc_info_str = SchemaInfo.summarise_schemas(sc_list)
+    panel = rich.panel.Panel(sc_info_str, title="Schema info")
     console.print(panel)
 
 
