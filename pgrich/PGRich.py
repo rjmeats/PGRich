@@ -56,6 +56,7 @@ class BasicSessionInfo:
         self.current_database = ""  # current_database and current_catalog are the same thing 'database' is pg, 'catalog' is SQL standard.
         self.pg_version = ""
         self.search_path = ""  # Order of searching schema names (in the current database) to find an unqualified object in a query
+        self.effective_search_path_list = []
 
 
 def read_session_basics(conn: pg_connection_type) -> tuple[BasicSessionInfo, str]:
@@ -69,12 +70,16 @@ def read_session_basics(conn: pg_connection_type) -> tuple[BasicSessionInfo, str
     basics.current_database = f[2]
     basics.pg_version = f[3]
 
-    # Read the search path setting
+    # Read the search path setting, and its practical implementation result
     # https://www.postgresql.org/docs/15/view-pg-settings.html
+    # https://www.postgresql.org/docs/15/functions-info.html
     cur = conn.cursor()
-    cur.execute("select setting from pg_settings where name = 'search_path';")
+    cur.execute(
+        "select setting, current_schemas(True) from pg_settings where name = 'search_path';"
+    )
     f = cur.fetchone()
     basics.search_path = f[0]
+    basics.effective_search_path_list = f[1]
 
     basics_str = (
         f""
@@ -295,12 +300,13 @@ class SchemaInfo:
         return l
 
     @classmethod
-    def summarise_schemas(cls, sc_list: list[SchemaInfo], search_path: str) -> str:
+    def summarise_schemas(cls, sc_list: list[SchemaInfo], basics: BasicSessionInfo) -> str:
         s = ""
         for sc in sc_list:
             description = SchemaInfo.standard_pg_schema_descriptions.get(sc.name, "-")
             s += f"{sc.name} : owner={sc.owner} : description = {description}\n"
-        s += f"\nSearch path is : {search_path}"
+        s += f"\nSearch path is : {basics.search_path}\n"
+        s += f"Effective search path is : {basics.effective_search_path_list}"
         return s
 
 
@@ -361,7 +367,7 @@ def main() -> None:
     console.print(panel)
 
     sc_list = SchemaInfo.read_schema_info(conn)
-    sc_info_str = SchemaInfo.summarise_schemas(sc_list, basics.search_path)
+    sc_info_str = SchemaInfo.summarise_schemas(sc_list, basics)
     panel = rich.panel.Panel(sc_info_str, title="Schema info")
     console.print(panel)
 
