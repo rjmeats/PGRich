@@ -266,8 +266,8 @@ class DatabaseInfo:
 
 class SchemaInfo:
     standard_pg_schema_descriptions: dict[str, str] = {
-        "information_schema": "SQL Standard metadata - see https://www.postgresql.org/docs/15/information-schema.html",
-        "pg_catalog": "Postgres metadata (e.g. pg_... tables)",
+        "information_schema": "SQL Standard metadata",  # see https://www.postgresql.org/docs/15/information-schema.html"
+        "pg_catalog": "Postgres native metadata (e.g. pg_... tables)",
         "pg_toast": "Storage of extended/large objects",
         "public": "Default schema",
     }
@@ -368,7 +368,9 @@ def main() -> None:
 
     sc_list = SchemaInfo.read_schema_info(conn)
     sc_info_str = SchemaInfo.summarise_schemas(sc_list, basics)
-    panel = rich.panel.Panel(sc_info_str, title="Schema info")
+    panel = rich.panel.Panel(
+        sc_info_str, title=f'Schema info for current database "{basics.current_database}"'
+    )
     console.print(panel)
 
 
