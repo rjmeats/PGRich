@@ -55,11 +55,13 @@ class BasicSessionInfo:
         self.current_user = ""  # Active role - same as session_user unless something like Set Role has updated it for the session
         self.current_database = ""  # current_database and current_catalog are the same thing 'database' is pg, 'catalog' is SQL standard.
         self.pg_version = ""
+        self.search_path = ""  # Order of searching schema names (in the current database) to find an unqualified object in a query
 
 
 def read_session_basics(conn: pg_connection_type) -> tuple[BasicSessionInfo, str]:
+    # https://www.postgresql.org/docs/15/functions-info.html
     cur = conn.cursor()
-    cur.execute("SELECT session_user, current_user, current_database(), version();")
+    cur.execute("select session_user, current_user, current_database(), version();")
     f = cur.fetchone()
     basics = BasicSessionInfo()
     basics.session_user = f[0]
@@ -67,11 +69,19 @@ def read_session_basics(conn: pg_connection_type) -> tuple[BasicSessionInfo, str
     basics.current_database = f[2]
     basics.pg_version = f[3]
 
+    # Read the search path setting
+    # https://www.postgresql.org/docs/15/view-pg-settings.html
+    cur = conn.cursor()
+    cur.execute("select setting from pg_settings where name = 'search_path';")
+    f = cur.fetchone()
+    basics.search_path = f[0]
+
     basics_str = (
         f""
         + f"Session user: {basics.session_user}\n"
         + f"Current user: {basics.current_user}\n"
         + f"Current database (=catalog): {basics.current_database}\n"
+        + f"Search path: {basics.search_path}\n"
         + f"PG Version: {basics.pg_version}"
     )
 
@@ -115,7 +125,7 @@ class RoleInfo:
     # https://www.postgresql.org/docs/15/view-pg-roles.html
     def read_role_info(conn: pg_connection_type) -> list[RoleInfo]:
         cur = conn.cursor()
-        cur.execute("SELECT rolname, rolsuper, rolcanlogin, oid from pg_roles order by rolname;")
+        cur.execute("select rolname, rolsuper, rolcanlogin, oid from pg_roles order by rolname;")
 
         l = [RoleInfo(record[0], record[1], record[2], record[3]) for record in cur]
         # for record in cur:
@@ -285,12 +295,13 @@ class SchemaInfo:
         return l
 
     @classmethod
-    def summarise_schemas(cls, sc_list: list[SchemaInfo]) -> str:
+    def summarise_schemas(cls, sc_list: list[SchemaInfo], search_path: str) -> str:
         s = ""
         for sc in sc_list:
             description = SchemaInfo.standard_pg_schema_descriptions.get(sc.name, "-")
             s += f"{sc.name} : owner={sc.owner} : description = {description}\n"
-        return s.strip()
+        s += f"\nSearch path is : {search_path}"
+        return s
 
 
 def main() -> None:
@@ -350,7 +361,7 @@ def main() -> None:
     console.print(panel)
 
     sc_list = SchemaInfo.read_schema_info(conn)
-    sc_info_str = SchemaInfo.summarise_schemas(sc_list)
+    sc_info_str = SchemaInfo.summarise_schemas(sc_list, basics.search_path)
     panel = rich.panel.Panel(sc_info_str, title="Schema info")
     console.print(panel)
 
