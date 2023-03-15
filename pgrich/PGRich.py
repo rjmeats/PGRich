@@ -16,6 +16,8 @@ from rich import inspect
 # https://www.postgresql.org/docs/current/functions-info.html
 # https://www.postgresql.org/docs/current/runtime-config-preset.html - Show xxxx options - server
 # https://www.postgresql.org/docs/current/runtime-config-client.html - Show xxxx options - client
+# https://www.postgresql.org/docs/15/catalogs.html - Postgres system catalogues
+# https://www.postgresql.org/docs/15/views.html - Postgres system views built on the system catalgues
 
 # PostgreSQL Python interface documentation:
 #
@@ -369,7 +371,7 @@ def main() -> None:
     sc_list = SchemaInfo.read_schema_info(conn)
     sc_info_str = SchemaInfo.summarise_schemas(sc_list, basics)
     panel = rich.panel.Panel(
-        sc_info_str, title=f'Schema info for current database "{basics.current_database}"'
+        sc_info_str, title=f'Schema info for the current database : "{basics.current_database}"'
     )
     console.print(panel)
 
