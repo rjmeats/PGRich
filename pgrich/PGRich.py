@@ -277,7 +277,7 @@ class SchemaInfo:
     def __init__(
         self,
         schema_name: str,
-        owner_oid,
+        owner_oid: int,
         owner: str,
         oid: int,
     ):
@@ -285,6 +285,7 @@ class SchemaInfo:
         self.owner_oid = owner_oid
         self.owner = owner
         self.oid = oid
+        self.tables_list: list[TableInfo] = []
 
     # AKA namespace
     # https://www.postgresql.org/docs/15/ddl-schemas.html
@@ -299,6 +300,9 @@ class SchemaInfo:
 
         l = [SchemaInfo(record[0], record[1], record[2], record[3]) for record in cur]
 
+        for si in l:
+            si.tables_list = TableInfo.read_table_info_for_schema(conn, si.name)
+
         return l
 
     @classmethod
@@ -306,10 +310,30 @@ class SchemaInfo:
         s = ""
         for sc in sc_list:
             description = SchemaInfo.standard_pg_schema_descriptions.get(sc.name, "-")
-            s += f"{sc.name} : owner={sc.owner} : description = {description}\n"
+            s += f"{sc.name} : owner={sc.owner} : description = {description} : tables count = {len(sc.tables_list)}\n"
         s += f"\nSearch path is : {basics.search_path}\n"
         s += f"Effective search path is : {basics.effective_search_path_list}"
         return s
+
+
+class TableInfo:
+    def __init__(self, schema_name: str, name: str, owner: str, tablespace_name: str):
+        self.schema_name = schema_name
+        self.name = name
+        self.owner = owner
+        self.tablespace_name = tablespace_name
+
+    def read_table_info_for_schema(conn: pg_connection_type, schema_name: str) -> list[TableInfo]:
+        cur = conn.cursor()
+        query = f"""select tablename, tableowner, tablespace
+                from pg_tables
+                where schemaname = '{schema_name}'
+                order by tablename;"""
+        cur.execute(query)
+
+        l = [TableInfo(schema_name, record[0], record[1], record[2]) for record in cur]
+
+        return l
 
 
 def main() -> None:
