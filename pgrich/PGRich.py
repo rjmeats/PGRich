@@ -323,6 +323,7 @@ class TableInfo:
         self.owner = owner
         self.tablespace_name = tablespace_name
 
+    # https://www.postgresql.org/docs/15/view-pg-tables.html
     def read_table_info_for_schema(conn: pg_connection_type, schema_name: str) -> list[TableInfo]:
         cur = conn.cursor()
         query = f"""select tablename, tableowner, tablespace
