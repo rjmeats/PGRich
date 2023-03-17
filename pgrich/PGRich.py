@@ -346,7 +346,7 @@ class ViewInfo:
         self.owner = owner
         self.definition = definition
 
-    # https://www.postgresql.org/docs/15/view-pg-tables.html
+    # https://www.postgresql.org/docs/15/view-pg-views.html
     def read_view_info_for_schema(conn: pg_connection_type, schema_name: str) -> list[ViewInfo]:
         cur = conn.cursor()
         query = f"""select viewname, viewowner, definition
