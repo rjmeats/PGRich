@@ -286,6 +286,7 @@ class SchemaInfo:
         self.owner = owner
         self.oid = oid
         self.tables_list: list[TableInfo] = []
+        self.views_list: list[ViewInfo] = []
 
     # AKA namespace
     # https://www.postgresql.org/docs/15/ddl-schemas.html
@@ -302,6 +303,7 @@ class SchemaInfo:
 
         for si in l:
             si.tables_list = TableInfo.read_table_info_for_schema(conn, si.name)
+            si.views_list = ViewInfo.read_view_info_for_schema(conn, si.name)
 
         return l
 
@@ -310,7 +312,7 @@ class SchemaInfo:
         s = ""
         for sc in sc_list:
             description = SchemaInfo.standard_pg_schema_descriptions.get(sc.name, "-")
-            s += f"{sc.name} : owner={sc.owner} : description = {description} : tables count = {len(sc.tables_list)}\n"
+            s += f"{sc.name} : owner={sc.owner} : description = {description} : tables count = {len(sc.tables_list)} : views count = {len(sc.views_list)}\n"
         s += f"\nSearch path is : {basics.search_path}\n"
         s += f"Effective search path is : {basics.effective_search_path_list}"
         return s
@@ -333,6 +335,27 @@ class TableInfo:
         cur.execute(query)
 
         l = [TableInfo(schema_name, record[0], record[1], record[2]) for record in cur]
+
+        return l
+
+
+class ViewInfo:
+    def __init__(self, schema_name: str, name: str, owner: str, definition: str):
+        self.schema_name = schema_name
+        self.name = name
+        self.owner = owner
+        self.definition = definition
+
+    # https://www.postgresql.org/docs/15/view-pg-tables.html
+    def read_view_info_for_schema(conn: pg_connection_type, schema_name: str) -> list[ViewInfo]:
+        cur = conn.cursor()
+        query = f"""select viewname, viewowner, definition
+                from pg_views
+                where schemaname = '{schema_name}'
+                order by viewname;"""
+        cur.execute(query)
+
+        l = [ViewInfo(schema_name, record[0], record[1], record[2]) for record in cur]
 
         return l
 
