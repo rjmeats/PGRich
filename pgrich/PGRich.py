@@ -312,7 +312,7 @@ class SchemaInfo:
         s = ""
         for sc in sc_list:
             description = SchemaInfo.standard_pg_schema_descriptions.get(sc.name, "-")
-            s += f"{sc.name} : owner={sc.owner} : description = {description} : tables count = {len(sc.tables_list)} : views count = {len(sc.views_list)}\n"
+            s += f"{sc.name} : owner={sc.owner} : description = {description} : tables={len(sc.tables_list)} views={len(sc.views_list)}\n"
         s += f"\nSearch path is : {basics.search_path}\n"
         s += f"Effective search path is : {basics.effective_search_path_list}"
         return s
