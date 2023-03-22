@@ -315,7 +315,7 @@ class SchemaInfo:
         for sc in sc_list:
             description = SchemaInfo.standard_pg_schema_descriptions.get(sc.name, "-")
             counts_info = f"tables={len(sc.tables_list)} views={len(sc.views_list)} indexes={len(sc.indexes_list)}"
-            s += f"{sc.name} : owner={sc.owner} : description = {description} : {counts_info}\n"
+            s += f'{sc.name} : owner={sc.owner} : description = "{description}" : {counts_info}\n'
         s += f"\nSearch path is : {basics.search_path}\n"
         s += f"Effective search path is : {basics.effective_search_path_list}"
         return s
@@ -327,6 +327,7 @@ class TableInfo:
         self.name = name
         self.owner = owner
         self.tablespace_name = tablespace_name
+        self.index_list: list[IndexInfo] = []
 
     # https://www.postgresql.org/docs/15/view-pg-tables.html
     def read_table_info_for_schema(conn: pg_connection_type, schema_name: str) -> list[TableInfo]:
@@ -339,7 +340,17 @@ class TableInfo:
 
         l = [TableInfo(schema_name, record[0], record[1], record[2]) for record in cur]
 
+        for ti in l:
+            ti.index_list = IndexInfo.read_index_info_for_table(conn, schema_name, ti.name)
+
         return l
+
+    @classmethod
+    def summarise_tables(cls, ti_list: list[TableInfo]) -> str:
+        s = ""
+        for ti in ti_list:
+            s += f"{ti.name} : owner={ti.owner} : indexes={len(ti.index_list)}\n"
+        return s
 
 
 class ViewInfo:
@@ -383,6 +394,21 @@ class IndexInfo:
         cur.execute(query)
 
         l = [IndexInfo(schema_name, record[0], record[1], record[2], record[3]) for record in cur]
+
+        return l
+
+    def read_index_info_for_table(
+        conn: pg_connection_type, schema_name: str, table_name: str
+    ) -> list[IndexInfo]:
+        cur = conn.cursor()
+        query = f"""select indexname, tablespace, indexdef
+                from pg_indexes
+                where schemaname = '{schema_name}'
+                and tablename = '{table_name}'
+                order by indexname;"""
+        cur.execute(query)
+
+        l = [IndexInfo(schema_name, record[0], table_name, record[1], record[2]) for record in cur]
 
         return l
 
@@ -449,6 +475,14 @@ def main() -> None:
         sc_info_str, title=f'Schema info for the current database : "{basics.current_database}"'
     )
     console.print(panel)
+
+    target_schema = "pg_catalog"
+    for sc in sc_list:
+        if sc.name == target_schema:
+            ti_list = sc.tables_list
+            tables_info_str = TableInfo.summarise_tables(ti_list)
+            panel = rich.panel.Panel(tables_info_str, title=f"Tables in schema {target_schema}")
+            console.print(panel)
 
 
 if __name__ == "__main__":
