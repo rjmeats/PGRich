@@ -413,6 +413,9 @@ class IndexInfo:
         return l
 
 
+# https://www.postgresql.org/docs/15/catalog-pg-attribute.html provides column info.
+
+
 def main() -> None:
     connection_string: Optional[str] = get_connection_string()
 
