@@ -327,6 +327,7 @@ class TableInfo:
         self.name = name
         self.owner = owner
         self.tablespace_name = tablespace_name
+        self.column_list: list[ColumnInfo] = []
         self.index_list: list[IndexInfo] = []
 
     # https://www.postgresql.org/docs/15/view-pg-tables.html
@@ -341,6 +342,7 @@ class TableInfo:
         l = [TableInfo(schema_name, record[0], record[1], record[2]) for record in cur]
 
         for ti in l:
+            ti.column_list = ColumnInfo.read_column_info_for_table(conn, schema_name, ti.name)
             ti.index_list = IndexInfo.read_index_info_for_table(conn, schema_name, ti.name)
 
         return l
@@ -349,7 +351,7 @@ class TableInfo:
     def summarise_tables(cls, ti_list: list[TableInfo]) -> str:
         s = ""
         for ti in ti_list:
-            s += f"{ti.name} : owner={ti.owner} : indexes={len(ti.index_list)}\n"
+            s += f"{ti.name} : owner={ti.owner} : columns={len(ti.column_list)} : indexes={len(ti.index_list)}\n"
         return s
 
 
@@ -413,7 +415,62 @@ class IndexInfo:
         return l
 
 
+class ColumnInfo:
+    def __init__(
+        self,
+        schema_name: str,
+        table_name: str,
+        name: str,
+        type: str,
+        length: int,
+        not_null: bool,
+        ordering: int,
+    ):
+        self.schema_name = schema_name
+        self.table_name = table_name
+        self.name = name
+        self.type = type
+        self.length = length
+        self.not_null = not_null
+        self.ordering = ordering
+
+    def read_column_info_for_table(
+        conn: pg_connection_type, schema_name: str, table_name: str
+    ) -> list[ColumnInfo]:
+        cur = conn.cursor()
+        query = f"""select a.attname, typ.typname, a.attlen, a.attnotnull, a.attnum
+                from pg_attribute a
+                join pg_class c on a.attrelid = c.oid 
+                join pg_type typ on a.atttypid = typ.oid
+                join pg_namespace nam on c.relnamespace = nam.oid
+                where nam.nspname = '{schema_name}'
+                and c.relname = '{table_name}'
+                order by a.attnum;"""
+
+        cur.execute(query)
+
+        l = [
+            ColumnInfo(
+                schema_name, table_name, record[0], record[1], record[2], record[3], record[4]
+            )
+            for record in cur
+        ]
+
+        return l
+
+
 # https://www.postgresql.org/docs/15/catalog-pg-attribute.html provides column info.
+# Use this query to fetch basic column details for a table.
+#
+# select a.attname, typ.typname, a.attlen, a.attnotnull
+# from pg_attribute a
+# join pg_class c on a.attrelid = c.oid
+# join pg_type typ on a.atttypid = typ.oid
+# join pg_namespace nam on c.relnamespace = nam.oid
+# and c.relname = 'pg_tables'
+# and nam.nspname = 'pg_catalog'
+# order by a.attnum
+# ;
 
 
 def main() -> None:
