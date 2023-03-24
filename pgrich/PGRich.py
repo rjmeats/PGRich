@@ -352,7 +352,7 @@ class TableInfo:
         s = ""
         for ti in ti_list:
             s += f"{ti.name} : owner={ti.owner} : columns={len(ti.column_list)} : indexes={len(ti.index_list)}\n"
-        return s
+        return s.strip()
 
 
 class ViewInfo:
@@ -523,12 +523,11 @@ def main() -> None:
     )
     console.print(panel)
 
-    target_schema = "pg_catalog"
+    # target_schema = "pg_catalog"
     for sc in sc_list:
-        if sc.name == target_schema:
-            ti_list = sc.tables_list
-            tables_info_str = TableInfo.summarise_tables(ti_list)
-            panel = rich.panel.Panel(tables_info_str, title=f"Tables in schema {target_schema}")
+        if len(sc.tables_list) > 0:
+            tables_info_str = TableInfo.summarise_tables(sc.tables_list)
+            panel = rich.panel.Panel(tables_info_str, title=f"Tables in schema {sc.name}")
             console.print(panel)
 
 
