@@ -434,6 +434,7 @@ class ColumnInfo:
         self.not_null = not_null
         self.ordering = ordering
 
+    # https://www.postgresql.org/docs/15/catalog-pg-attribute.html provides column info.
     def read_column_info_for_table(
         conn: pg_connection_type, schema_name: str, table_name: str
     ) -> list[ColumnInfo]:
@@ -457,20 +458,6 @@ class ColumnInfo:
         ]
 
         return l
-
-
-# https://www.postgresql.org/docs/15/catalog-pg-attribute.html provides column info.
-# Use this query to fetch basic column details for a table.
-#
-# select a.attname, typ.typname, a.attlen, a.attnotnull
-# from pg_attribute a
-# join pg_class c on a.attrelid = c.oid
-# join pg_type typ on a.atttypid = typ.oid
-# join pg_namespace nam on c.relnamespace = nam.oid
-# and c.relname = 'pg_tables'
-# and nam.nspname = 'pg_catalog'
-# order by a.attnum
-# ;
 
 
 def main() -> None:
