@@ -573,15 +573,24 @@ def produce_tree(
     db_list: list[DatabaseInfo],
 ):
     my_tree = rich.tree.Tree(basics.cluster_name)
-    roles_tree = my_tree.add("Roles")
+    roles_tree = my_tree.add("Roles:")
     for role in roles_list:
         roles_tree.add(role.name)
-    ts_tree = my_tree.add("Tablespaces")
+    ts_tree = my_tree.add("Tablespaces:")
     for ts in ts_list:
         ts_tree.add(ts.name)
-    db_tree = my_tree.add("Databases")
+    dbs_tree = my_tree.add("Databases:")
     for db in db_list:
-        db_tree.add(db.name)
+        db_tree = dbs_tree.add(db.name)
+        schemas_tree = db_tree.add("Schemas:")
+        for schema in db.schemas_list:
+            schema_tree = schemas_tree.add(schema.name)
+            tables_tree = schema_tree.add("Tables:")
+            for t in schema.tables_list:
+                table_tree = tables_tree.add(t.name)
+            views_tree = schema_tree.add("Views:")
+            for v in schema.views_list:
+                views_tree.add(v.name)
     panel = rich.panel.Panel(my_tree, title=f"Summary tree")
     console.print(panel)
 
