@@ -7,6 +7,7 @@ from typing import Optional, Self, TypeAlias
 import psycopg2
 import rich.console
 import rich.panel
+import rich.tree
 from rich import inspect
 
 #
@@ -59,6 +60,7 @@ class BasicSessionInfo:
         self.pg_version = ""
         self.search_path = ""  # Order of searching schema names (in the current database) to find an unqualified object in a query
         self.effective_search_path_list = []
+        self.cluster_name = ""
 
 
 def read_session_basics(conn: pg_connection_type) -> tuple[BasicSessionInfo, str]:
@@ -75,6 +77,8 @@ def read_session_basics(conn: pg_connection_type) -> tuple[BasicSessionInfo, str
     # Read the search path setting, and its practical implementation result
     # https://www.postgresql.org/docs/15/view-pg-settings.html
     # https://www.postgresql.org/docs/15/functions-info.html
+    # Could/should perhaps use the current_setting function instead ?
+    # https://www.postgresql.org/docs/15/functions-admin.html
     cur = conn.cursor()
     cur.execute(
         "select setting, current_schemas(True) from pg_settings where name = 'search_path';"
@@ -83,16 +87,29 @@ def read_session_basics(conn: pg_connection_type) -> tuple[BasicSessionInfo, str
     basics.search_path = f[0]
     basics.effective_search_path_list = f[1]
 
+    # Come up with something to provide a cluster name.
+    cur = conn.cursor()
+    cur.execute(
+        "select setting, inet_server_addr(), inet_server_port() from pg_settings where name = 'cluster_name';"
+    )
+    f = cur.fetchone()
+    basics.cluster_name = f[0]
+    server_ip = f[1]
+    server_port = f[2]
+    if basics.cluster_name == "":
+        basics.cluster_name = f"<Unnamed cluster> @{server_ip}/{server_port}"
+
     basics_str = (
         f""
         + f"Session user: {basics.session_user}\n"
         + f"Current user: {basics.current_user}\n"
         + f"Current database (=catalog): {basics.current_database}\n"
         + f"Search path: {basics.search_path}\n"
-        + f"PG Version: {basics.pg_version}"
+        + f"PG Version: {basics.pg_version}\n"
+        + f"Cluster name: {basics.cluster_name}\n"
     )
 
-    return basics, basics_str
+    return basics, basics_str.strip()
 
 
 def summarise_connection_info(conn: pg_connection_type) -> str:
@@ -232,6 +249,10 @@ class DatabaseInfo:
         self.encoding_id = encoding_id
         self.encoding_name = encoding_name
         self.default_tablespace = default_tablespace
+        self.schemas_list: list[SchemaInfo] = []
+
+    def set_schema_list(self, schemas_list: list[SchemaInfo]):
+        self.schemas_list = schemas_list
 
     # https://www.postgresql.org/docs/current/catalog-pg-database.html
     # https://www.postgresql.org/docs/current/functions-info.html#PG-ENCODING-TO-CHAR
@@ -523,12 +544,46 @@ def main() -> None:
     )
     console.print(panel)
 
+    # Attach the schema list to the info for the current database
+    current_db: Optional[DatabaseInfo] = None
+    for db in db_list:
+        if db.name == basics.current_database:
+            current_db = db
+            break
+
+    if current_db is not None:
+        current_db.set_schema_list(sc_list)
+    else:
+        console.print(f"[red]** failed to identify the current database {basics.current_database}")
+
     # target_schema = "pg_catalog"
     for sc in sc_list:
         if len(sc.tables_list) > 0:
             tables_info_str = TableInfo.summarise_tables(sc.tables_list)
             panel = rich.panel.Panel(tables_info_str, title=f"Tables in schema {sc.name}")
             console.print(panel)
+
+    produce_tree(basics, roles_list, ts_list, db_list)
+
+
+def produce_tree(
+    basics: BasicSessionInfo,
+    roles_list: list[RoleInfo],
+    ts_list: list[TablespaceInfo],
+    db_list: list[DatabaseInfo],
+):
+    my_tree = rich.tree.Tree(basics.cluster_name)
+    roles_tree = my_tree.add("Roles")
+    for role in roles_list:
+        roles_tree.add(role.name)
+    ts_tree = my_tree.add("Tablespaces")
+    for ts in ts_list:
+        ts_tree.add(ts.name)
+    db_tree = my_tree.add("Databases")
+    for db in db_list:
+        db_tree.add(db.name)
+    panel = rich.panel.Panel(my_tree, title=f"Summary tree")
+    console.print(panel)
 
 
 if __name__ == "__main__":
