@@ -572,25 +572,40 @@ def produce_tree(
     ts_list: list[TablespaceInfo],
     db_list: list[DatabaseInfo],
 ):
-    my_tree = rich.tree.Tree(basics.cluster_name)
-    roles_tree = my_tree.add("Roles:")
-    for role in roles_list:
+    my_tree = rich.tree.Tree(f"Postgres Cluster")
+
+    system_tree = my_tree.add("System:")
+    system_tree.add(f"Cluster name: {basics.cluster_name}")
+    system_tree.add(f"Postgres version: {basics.pg_version}")
+
+    session_tree = my_tree.add("This session:")
+    session_tree.add(f"Current user: {basics.current_user}")
+    session_tree.add(f"Current database: {basics.current_database}")
+    session_tree.add(f"Search path: {basics.search_path}")
+    session_tree.add(f"Effective search path: {basics.effective_search_path_list}")
+
+    roles_tree = my_tree.add(f"Roles ({len(roles_list)}):")
+    for role in roles_list[0:2]:
         roles_tree.add(role.name)
-    ts_tree = my_tree.add("Tablespaces:")
+    ts_tree = my_tree.add(f"Tablespaces ({len(ts_list)}):")
     for ts in ts_list:
         ts_tree.add(ts.name)
-    dbs_tree = my_tree.add("Databases:")
+    dbs_tree = my_tree.add(f"Databases ({len(db_list)}):")
     for db in db_list:
-        db_tree = dbs_tree.add(db.name)
-        schemas_tree = db_tree.add("Schemas:")
-        for schema in db.schemas_list:
-            schema_tree = schemas_tree.add(schema.name)
-            tables_tree = schema_tree.add("Tables:")
-            for t in schema.tables_list:
-                table_tree = tables_tree.add(t.name)
-            views_tree = schema_tree.add("Views:")
-            for v in schema.views_list:
-                views_tree.add(v.name)
+        if db.name != basics.current_database:
+            db_tree = dbs_tree.add(f"{db.name} : <not visible from this session>")
+        else:
+            db_tree = dbs_tree.add(db.name)
+            schemas_tree = db_tree.add(f"Schemas ({len(db.schemas_list)}):")
+            for schema in db.schemas_list:
+                schema_tree = schemas_tree.add(schema.name)
+                tables_tree = schema_tree.add(f"Tables ({len(schema.tables_list)}):")
+                # for t in schema.tables_list:
+                #    table_tree = tables_tree.add(t.name)
+                views_tree = schema_tree.add(f"Views ({len(schema.views_list)}):")
+                # for v in schema.views_list:
+                #    views_tree.add(v.name)
+                indexes_tree = schema_tree.add(f"Indexes ({len(schema.indexes_list)}):")
     panel = rich.panel.Panel(my_tree, title=f"Summary tree")
     console.print(panel)
 
