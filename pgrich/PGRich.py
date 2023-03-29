@@ -587,9 +587,12 @@ def produce_tree(
     roles_tree = my_tree.add(f"Roles ({len(roles_list)}):")
     for role in roles_list[0:2]:
         roles_tree.add(role.name)
+    roles_tree.add("...")
+
     ts_tree = my_tree.add(f"Tablespaces ({len(ts_list)}):")
     for ts in ts_list:
         ts_tree.add(ts.name)
+
     dbs_tree = my_tree.add(f"Databases ({len(db_list)}):")
     for db in db_list:
         if db.name != basics.current_database:
@@ -606,6 +609,7 @@ def produce_tree(
                 # for v in schema.views_list:
                 #    views_tree.add(v.name)
                 indexes_tree = schema_tree.add(f"Indexes ({len(schema.indexes_list)}):")
+
     panel = rich.panel.Panel(my_tree, title=f"Summary tree")
     console.print(panel)
 
