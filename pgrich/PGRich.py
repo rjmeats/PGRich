@@ -515,12 +515,12 @@ def main() -> None:
         basics_str: str = result[1]
 
         panel = rich.panel.Panel(basics_str, title="Session info")
-        console.print(panel)
+        # console.print(panel)
 
     # Show info about the connection
     conn_info_str = summarise_connection_info(conn)
     panel = rich.panel.Panel(conn_info_str, title="Connection info")
-    console.print(panel)
+    # console.print(panel)
 
     roles_list = RoleInfo.read_role_info(conn)
     roles_info_str = RoleInfo.summarise_roles(roles_list, basics.current_user)
@@ -584,31 +584,57 @@ def produce_tree(
     session_tree.add(f"Search path: {basics.search_path}")
     session_tree.add(f"Effective search path: {basics.effective_search_path_list}")
 
+    super_user_roles: list[str] = []
+    other_login_roles: list[str] = []
+    other_roles: list[str] = []
+    for role in roles_list:
+        role_name = role.name
+        if role.name == basics.current_user:
+            role_name = f"[bold white on blue]{role.name}"
+        if role.is_super_user:
+            super_user_roles.append(role_name)
+        elif role.can_login:
+            other_login_roles.append(role_name)
+        else:
+            other_roles.append(role_name)
+
     roles_tree = my_tree.add(f"Roles ({len(roles_list)}):")
-    for role in roles_list[0:2]:
-        roles_tree.add(role.name)
-    roles_tree.add("...")
+    super_users_tree = roles_tree.add(f"Super-user roles ({len(super_user_roles)}):")
+    for role_name in sorted(super_user_roles):
+        super_users_tree.add(role_name)
+    other_logins_tree = roles_tree.add(f"Other login roles ({len(other_login_roles)}):")
+    for role_name in sorted(other_login_roles):
+        other_logins_tree.add(role_name)
+    other_roles_tree = roles_tree.add(f"Other roles ({len(other_roles)}):")
+    for role_name in sorted(other_roles):
+        other_roles_tree.add(role_name)
 
     ts_tree = my_tree.add(f"Tablespaces ({len(ts_list)}):")
     for ts in ts_list:
-        ts_tree.add(ts.name)
+        ts_tree.add(f"{ts.name} size={ts.size/1024/1024:.1f} MB")
 
     dbs_tree = my_tree.add(f"Databases ({len(db_list)}):")
     for db in db_list:
         if db.name != basics.current_database:
-            db_tree = dbs_tree.add(f"{db.name} : <not visible from this session>")
+            db_tree = dbs_tree.add(f"{db.name} : <not visible from this session>", style="dim")
         else:
             db_tree = dbs_tree.add(db.name)
-            schemas_tree = db_tree.add(f"Schemas ({len(db.schemas_list)}):")
+            schemas_tree = db_tree.add(f"Schemas ({len(db.schemas_list)}):", expanded=True)
             for schema in db.schemas_list:
-                schema_tree = schemas_tree.add(schema.name)
-                tables_tree = schema_tree.add(f"Tables ({len(schema.tables_list)}):")
-                # for t in schema.tables_list:
-                #    table_tree = tables_tree.add(t.name)
-                views_tree = schema_tree.add(f"Views ({len(schema.views_list)}):")
-                # for v in schema.views_list:
-                #    views_tree.add(v.name)
-                indexes_tree = schema_tree.add(f"Indexes ({len(schema.indexes_list)}):")
+                schema_tree = schemas_tree.add(schema.name, expanded=False)
+                tables_tree = schema_tree.add(
+                    f"[bright_blue]Tables ({len(schema.tables_list)}):",
+                    expanded=True,
+                    guide_style="underline2 bright_blue",
+                )
+                for t in schema.tables_list:
+                    table_tree = tables_tree.add(f"[bright_blue]{t.name}")
+                views_tree = schema_tree.add(f"Views ({len(schema.views_list)}):", expanded=False)
+                for v in schema.views_list:
+                    views_tree.add(v.name)
+                indexes_tree = schema_tree.add(
+                    f"Indexes ({len(schema.indexes_list)}):", expanded=False
+                )
 
     panel = rich.panel.Panel(my_tree, title=f"Summary tree")
     console.print(panel)
