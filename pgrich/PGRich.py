@@ -214,20 +214,33 @@ class TablespaceInfo:
         query = """select t.spcname, t.spcowner, r.rolname, t.oid, pg_tablespace_size(t.oid)
                 from pg_tablespace t join pg_roles r on t.spcowner = r.oid
                 order by t.spcname;"""
-        cur.execute(query)
 
-        l = [
-            TablespaceInfo(record[0], record[1], record[2], record[3], record[4]) for record in cur
-        ]
+        l = []
+        try:
+            cur.execute(query)
+            l = [
+                TablespaceInfo(record[0], record[1], record[2], record[3], record[4])
+                for record in cur
+            ]
+
+        except psycopg2.errors.InsufficientPrivilege as ex:
+            pass
+            # print(f"No permissions to to read tablespace info: {ex}")
+        # Let other exceptions propagate.
+        # except Exception as ex:
+        #    print(f"Failed to read TS info: {ex}")
 
         return l
 
     @classmethod
     def summarise_tablespaces(cls, ts_list: list[TablespaceInfo]) -> str:
-        s = ""
-        for ts in ts_list:
-            size_in_mb: float = ts.size / 1024 / 1024
-            s += f'{ts.name} : owner={ts.owner} : size={size_in_mb:.1f} MB : location="{ts.file_location}"\n'
+        if len(ts_list) == 0:
+            s = "No tablespace info - insufficient privileges"
+        else:
+            s = ""
+            for ts in ts_list:
+                size_in_mb: float = ts.size / 1024 / 1024
+                s += f'{ts.name} : owner={ts.owner} : size={size_in_mb:.1f} MB : location="{ts.file_location}"\n'
         return s.strip()
 
 
@@ -492,8 +505,10 @@ def main() -> None:
     # https://www.postgresql.org/docs/current/libpq-pgpass.html
     try:
         conn = psycopg2.connect(connection_string)
+        # Turn on autocommit so that errors in SQL (e.g. permissions) don't affect subsequent statements.
+        conn.autocommit = True
     except Exception as err:
-        console.print(f"[red]** failed to connect using[/red] {connection_string}")
+        console.print(f"[red]** failed to connect using[/red] {connection_string} : {err}")
         return
 
     # If turned on, the second time round the loop does a 'set role' to the built-in read-only role, and shows how
@@ -609,9 +624,12 @@ def produce_tree(
     for role_name in sorted(other_roles):
         other_roles_tree.add(role_name)
 
-    ts_tree = my_tree.add(f"Tablespaces ({len(ts_list)}):")
-    for ts in ts_list:
-        ts_tree.add(f"{ts.name} size={ts.size/1024/1024:.1f} MB")
+    if len(ts_list) == 0:
+        ts_tree = my_tree.add(f"Tablespaces : <not visible from this session>", style="dim")
+    else:
+        ts_tree = my_tree.add(f"Tablespaces ({len(ts_list)}):")
+        for ts in ts_list:
+            ts_tree.add(f"{ts.name} size={ts.size/1024/1024:.1f} MB")
 
     dbs_tree = my_tree.add(f"Databases ({len(db_list)}):")
     for db in db_list:
