@@ -308,13 +308,9 @@ class SchemaInfo:
         "public": "Default schema",
     }
 
-    def __init__(
-        self,
-        schema_name: str,
-        owner_oid: int,
-        owner: str,
-        oid: int,
-    ):
+    system_schemas_list = ["information_schema", "pg_catalog", "pg_toast"]
+
+    def __init__(self, schema_name: str, owner_oid: int, owner: str, oid: int):
         self.name = schema_name
         self.owner_oid = owner_oid
         self.owner = owner
@@ -322,6 +318,9 @@ class SchemaInfo:
         self.tables_list: list[TableInfo] = []
         self.views_list: list[ViewInfo] = []
         self.indexes_list: list[IndexInfo] = []
+
+    def is_system(self):
+        return self.name in SchemaInfo.system_schemas_list
 
     # AKA namespace
     # https://www.postgresql.org/docs/15/ddl-schemas.html
@@ -540,12 +539,12 @@ def main() -> None:
     roles_list = RoleInfo.read_role_info(conn)
     roles_info_str = RoleInfo.summarise_roles(roles_list, basics.current_user)
     panel = rich.panel.Panel(roles_info_str, title="Roles info")
-    console.print(panel)
+    # console.print(panel)
 
     ts_list = TablespaceInfo.read_tablespace_info(conn)
     ts_info_str = TablespaceInfo.summarise_tablespaces(ts_list)
     panel = rich.panel.Panel(ts_info_str, title="Tablespace info")
-    console.print(panel)
+    # console.print(panel)
 
     db_list = DatabaseInfo.read_database_info(conn)
     db_info_str = DatabaseInfo.summarise_databases(db_list, basics.current_database)
@@ -587,13 +586,13 @@ def produce_tree(
     ts_list: list[TablespaceInfo],
     db_list: list[DatabaseInfo],
 ):
-    my_tree = rich.tree.Tree(f"Postgres Cluster")
+    my_tree = rich.tree.Tree(f"[bold]Postgres Cluster[/]")
 
-    system_tree = my_tree.add("System:")
+    system_tree = my_tree.add("[bold]System[/]:")
     system_tree.add(f"Cluster name: {basics.cluster_name}")
     system_tree.add(f"Postgres version: {basics.pg_version}")
 
-    session_tree = my_tree.add("This session:")
+    session_tree = my_tree.add("[bold]This session[/]:")
     session_tree.add(f"Current user: {basics.current_user}")
     session_tree.add(f"Current database: {basics.current_database}")
     session_tree.add(f"Search path: {basics.search_path}")
@@ -613,7 +612,7 @@ def produce_tree(
         else:
             other_roles.append(role_name)
 
-    roles_tree = my_tree.add(f"Roles ({len(roles_list)}):")
+    roles_tree = my_tree.add(f"[bold]Roles[/] ({len(roles_list)}):")
     super_users_tree = roles_tree.add(f"Super-user roles ({len(super_user_roles)}):")
     for role_name in sorted(super_user_roles):
         super_users_tree.add(role_name)
@@ -627,34 +626,36 @@ def produce_tree(
     if len(ts_list) == 0:
         ts_tree = my_tree.add(f"Tablespaces : <not visible from this session>", style="dim")
     else:
-        ts_tree = my_tree.add(f"Tablespaces ({len(ts_list)}):")
+        ts_tree = my_tree.add(f"[bold]Tablespaces[/] ({len(ts_list)}):")
         for ts in ts_list:
-            ts_tree.add(f"{ts.name} size={ts.size/1024/1024:.1f} MB")
+            ts_tree.add(f"[bold]{ts.name}[/] - size={ts.size/1024/1024:.1f} MB")
 
-    dbs_tree = my_tree.add(f"Databases ({len(db_list)}):")
+    dbs_tree = my_tree.add(f"[bold]Databases[/] ({len(db_list)}):")
     for db in db_list:
         if db.name != basics.current_database:
             db_tree = dbs_tree.add(f"{db.name} : <not visible from this session>", style="dim")
         else:
-            db_tree = dbs_tree.add(db.name)
+            db_tree = dbs_tree.add(f"[bold]{db.name}[/]")
             schemas_tree = db_tree.add(f"Schemas ({len(db.schemas_list)}):", expanded=True)
             for schema in db.schemas_list:
-                schema_tree = schemas_tree.add(schema.name, expanded=False)
+                name_for_display = schema.name if schema.is_system() else f"[bold]{schema.name}[/]"
+                expand = not schema.is_system()
+                schema_tree = schemas_tree.add(name_for_display, expanded=expand)
                 tables_tree = schema_tree.add(
                     f"[bright_blue]Tables ({len(schema.tables_list)}):",
                     expanded=True,
                     guide_style="underline2 bright_blue",
                 )
                 for t in schema.tables_list:
-                    table_tree = tables_tree.add(f"[bright_blue]{t.name}")
-                views_tree = schema_tree.add(f"Views ({len(schema.views_list)}):", expanded=False)
+                    table_tree = tables_tree.add(f"{t.name}")
+                views_tree = schema_tree.add(f"Views ({len(schema.views_list)}):", expanded=expand)
                 for v in schema.views_list:
                     views_tree.add(v.name)
                 indexes_tree = schema_tree.add(
-                    f"Indexes ({len(schema.indexes_list)}):", expanded=False
+                    f"Indexes ({len(schema.indexes_list)}):", expanded=expand
                 )
 
-    panel = rich.panel.Panel(my_tree, title=f"Summary tree")
+    panel = rich.panel.Panel(my_tree, title=f"[bold]Cluster Summary[/]")
     console.print(panel)
 
 
