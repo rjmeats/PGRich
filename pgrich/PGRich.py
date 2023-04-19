@@ -61,6 +61,7 @@ class BasicSessionInfo:
         self.search_path = ""  # Order of searching schema names (in the current database) to find an unqualified object in a query
         self.effective_search_path_list = []
         self.cluster_name = ""
+        self.psycopg2_version = ""
 
 
 def read_session_basics(conn: pg_connection_type) -> tuple[BasicSessionInfo, str]:
@@ -99,6 +100,9 @@ def read_session_basics(conn: pg_connection_type) -> tuple[BasicSessionInfo, str
     if basics.cluster_name == "":
         basics.cluster_name = f"<Unnamed cluster> @{server_ip}/{server_port}"
 
+    # basics.psycopg2_version = psycopg2.extensions.libpq_version()
+    basics.psycopg2_version = psycopg2.__version__
+
     basics_str = (
         f""
         + f"Session user: {basics.session_user}\n"
@@ -107,6 +111,7 @@ def read_session_basics(conn: pg_connection_type) -> tuple[BasicSessionInfo, str
         + f"Search path: {basics.search_path}\n"
         + f"PG Version: {basics.pg_version}\n"
         + f"Cluster name: {basics.cluster_name}\n"
+        + f"psycopg2 version: {basics.psycopg2_version}\n"
     )
 
     return basics, basics_str.strip()
@@ -597,6 +602,7 @@ def produce_tree(
     session_tree.add(f"Current database: {basics.current_database}")
     session_tree.add(f"Search path: {basics.search_path}")
     session_tree.add(f"Effective search path: {basics.effective_search_path_list}")
+    session_tree.add(f"Psycopg version: {basics.psycopg2_version}")
 
     super_user_roles: list[str] = []
     other_login_roles: list[str] = []
