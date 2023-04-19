@@ -197,6 +197,10 @@ class RoleInfo:
 
         return s
 
+    @classmethod
+    def sort_roles_list(cls, l: list[RoleInfo]) -> list[RoleInfo]:
+        return sorted(l, key=lambda r: r.name)
+
 
 class TablespaceInfo:
     def __init__(self, tablespace_name: str, owner_oid, owner: str, oid: int, size: int):
@@ -604,31 +608,57 @@ def get_session_tree(basics: BasicSessionInfo):
     return t
 
 
-def get_roles_tree(roles_list: list[RoleInfo], current_user: str):
-    super_user_roles: list[str] = []
-    other_login_roles: list[str] = []
-    other_roles: list[str] = []
-    for role in roles_list:
-        role_name = role.name
+def get_roles_tree(roles_list: list[RoleInfo], current_user: str, level: str, detail: str = ""):
+    super_user_roles: list[tuple[RoleInfo, str]] = []
+    other_login_roles: list[tuple[RoleInfo, str]] = []
+    other_roles: list[tuple[RoleInfo, str]] = []
+    detail_tree = None
+    for role in RoleInfo.sort_roles_list(roles_list):
+        display_name = role.name
         if role.name == current_user:
-            role_name = f"[bold white on blue]{role.name}"
+            display_name = f"[bold white on blue]{role.name}"
+        if role.name == detail:
+            display_name = f"[bold white on red]{role.name}"
+
+        names = (role, display_name)
         if role.is_super_user:
-            super_user_roles.append(role_name)
+            super_user_roles.append(names)
         elif role.can_login:
-            other_login_roles.append(role_name)
+            other_login_roles.append(names)
         else:
-            other_roles.append(role_name)
+            other_roles.append(names)
+
+        if level == "3" and role.name == detail:
+            detail_tree = rich.tree.Tree(display_name)
+            # Put in some real attributes ????
+            detail_tree.add("...")
 
     t = rich.tree.Tree(f"[bold]Roles[/] ({len(roles_list)}):")
+
+    if detail != "" and detail_tree == None:
+        # ???? Handle unknown role name in a better way
+        t.add(f'[red on yellow]Failed to find role named "{detail}"')
+
     super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)}):")
-    for role_name in sorted(super_user_roles):
-        super_users_tree.add(role_name)
+    for role, display_name in super_user_roles:
+        if level == "3" and role.name == detail and detail_tree is not None:
+            super_users_tree.add(detail_tree)
+        else:
+            super_users_tree.add(display_name)
+
     other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)}):")
-    for role_name in sorted(other_login_roles):
-        other_logins_tree.add(role_name)
+    for role, display_name in other_login_roles:
+        if level == "2":
+            other_logins_tree.add(display_name)
+        elif level == "3" and role.name == detail and detail_tree is not None:
+            other_logins_tree.add(detail_tree)
+
     other_roles_tree = t.add(f"Other roles ({len(other_roles)}):")
-    for role_name in sorted(other_roles):
-        other_roles_tree.add(role_name)
+    for role, display_name in other_roles:
+        if level == "2":
+            other_roles_tree.add(display_name)
+        elif level == "3" and role.name == detail and detail_tree is not None:
+            other_roles_tree.add(detail_tree)
 
     return t
 
@@ -654,7 +684,12 @@ def produce_tree(
 
     my_tree.add(get_system_tree(basics))
     my_tree.add(get_session_tree(basics))
-    my_tree.add(get_roles_tree(roles_list, basics.current_user))
+    # For temp dev purposes, add all three different roles output levels: 1=basic, 2=list role names, 3=detail for a specific role name
+    my_tree.add(get_roles_tree(roles_list, basics.current_user, level="1"))
+    my_tree.add(get_roles_tree(roles_list, basics.current_user, level="2"))
+    my_tree.add(
+        get_roles_tree(roles_list, basics.current_user, level="3", detail="g_read_server_files")
+    )
     my_tree.add(get_tablespaces_tree(ts_list))
 
     dbs_tree = my_tree.add(f"[bold]Databases[/] ({len(db_list)}):")
