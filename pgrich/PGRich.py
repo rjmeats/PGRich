@@ -671,7 +671,7 @@ def get_tablespaces_tree(ts_list: list[TablespaceInfo]):
         for ts in ts_list:
             t.add(f"[bold]{ts.name}[/] - size={ts.size/1024/1024:.1f} MB")
 
-        return t
+    return t
 
 
 def produce_tree(
@@ -684,12 +684,14 @@ def produce_tree(
 
     my_tree.add(get_system_tree(basics))
     my_tree.add(get_session_tree(basics))
+
     # For temp dev purposes, add all three different roles output levels: 1=basic, 2=list role names, 3=detail for a specific role name
     my_tree.add(get_roles_tree(roles_list, basics.current_user, level="1"))
     my_tree.add(get_roles_tree(roles_list, basics.current_user, level="2"))
     my_tree.add(
-        get_roles_tree(roles_list, basics.current_user, level="3", detail="g_read_server_files")
+        get_roles_tree(roles_list, basics.current_user, level="3", detail="pg_read_server_files")
     )
+
     my_tree.add(get_tablespaces_tree(ts_list))
 
     dbs_tree = my_tree.add(f"[bold]Databases[/] ({len(db_list)}):")
