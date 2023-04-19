@@ -626,8 +626,8 @@ def produce_tree(
     for role_name in sorted(other_login_roles):
         other_logins_tree.add(role_name)
     other_roles_tree = roles_tree.add(f"Other roles ({len(other_roles)}):")
-    for role_name in sorted(other_roles):
-        other_roles_tree.add(role_name)
+    # for role_name in sorted(other_roles):
+    #    other_roles_tree.add(role_name)
 
     if len(ts_list) == 0:
         ts_tree = my_tree.add(f"Tablespaces : <not visible from this session>", style="dim")
