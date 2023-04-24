@@ -589,21 +589,27 @@ def main() -> None:
     produce_tree(basics, roles_list, ts_list, db_list)
 
 
-def get_system_tree(basics: BasicSessionInfo):
-    t = rich.tree.Tree(f"[bold]System[/]:")
-    t.add(f"Cluster name: {basics.cluster_name}")
-    t.add(f"Postgres version: {basics.pg_version}")
+def get_system_tree(basics: BasicSessionInfo, level: str, detail: str = ""):
+    if level == "1":
+        t = rich.tree.Tree(f"[bold]System[/]: {basics.cluster_name}")
+    else:
+        t = rich.tree.Tree(f"[bold]System[/]:")
+        t.add(f"Cluster name: {basics.cluster_name}")
+        t.add(f"Postgres version: {basics.pg_version}")
 
     return t
 
 
-def get_session_tree(basics: BasicSessionInfo):
-    t = rich.tree.Tree("[bold]This session[/]:")
-    t.add(f"Current user: {basics.current_user}")
-    t.add(f"Current database: {basics.current_database}")
-    t.add(f"Search path: {basics.search_path}")
-    t.add(f"Effective search path: {basics.effective_search_path_list}")
-    t.add(f"Psycopg version: {basics.psycopg2_version}")
+def get_session_tree(basics: BasicSessionInfo, level: str, detail: str = ""):
+    if level == "1":
+        t = rich.tree.Tree(f"[bold]This session[/]: User = {basics.current_user}")
+    else:
+        t = rich.tree.Tree("[bold]This session[/]:")
+        t.add(f"Current user: {basics.current_user}")
+        t.add(f"Current database: {basics.current_database}")
+        t.add(f"Search path: {basics.search_path}")
+        t.add(f"Effective search path: {basics.effective_search_path_list}")
+        t.add(f"Psycopg version: {basics.psycopg2_version}")
 
     return t
 
@@ -617,7 +623,7 @@ def get_roles_tree(roles_list: list[RoleInfo], current_user: str, level: str, de
         display_name = role.name
         if role.name == current_user:
             display_name = f"[bold white on blue]{role.name}"
-        if role.name == detail:
+        if role.name.upper() == detail.upper():
             display_name = f"[bold white on red]{role.name}"
 
         names = (role, display_name)
@@ -628,7 +634,7 @@ def get_roles_tree(roles_list: list[RoleInfo], current_user: str, level: str, de
         else:
             other_roles.append(names)
 
-        if level == "3" and role.name == detail:
+        if level == "3" and role.name.upper() == detail.upper():
             detail_tree = rich.tree.Tree(display_name)
             # Put in some real attributes ????
             detail_tree.add("...")
@@ -641,35 +647,49 @@ def get_roles_tree(roles_list: list[RoleInfo], current_user: str, level: str, de
 
     super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)}):")
     for role, display_name in super_user_roles:
-        if level == "3" and role.name == detail and detail_tree is not None:
+        use_detail = role.name.upper() == detail.upper()
+        if level == "3" and use_detail and detail_tree is not None:
             super_users_tree.add(detail_tree)
         else:
             super_users_tree.add(display_name)
 
     other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)}):")
     for role, display_name in other_login_roles:
+        use_detail = role.name.upper() == detail.upper()
         if level == "2":
             other_logins_tree.add(display_name)
-        elif level == "3" and role.name == detail and detail_tree is not None:
+        elif level == "3" and use_detail and detail_tree is not None:
             other_logins_tree.add(detail_tree)
 
     other_roles_tree = t.add(f"Other roles ({len(other_roles)}):")
     for role, display_name in other_roles:
+        use_detail = role.name.upper() == detail.upper()
         if level == "2":
             other_roles_tree.add(display_name)
-        elif level == "3" and role.name == detail and detail_tree is not None:
+        elif level == "3" and use_detail and detail_tree is not None:
             other_roles_tree.add(detail_tree)
 
     return t
 
 
-def get_tablespaces_tree(ts_list: list[TablespaceInfo]):
+def get_tablespaces_tree(ts_list: list[TablespaceInfo], level: str, detail: str = ""):
     if len(ts_list) == 0:
         t = rich.tree.Tree(f"Tablespaces : <not visible from this session>", style="dim")
     else:
         t = rich.tree.Tree(f"[bold]Tablespaces[/] ({len(ts_list)}):")
-        for ts in ts_list:
-            t.add(f"[bold]{ts.name}[/] - size={ts.size/1024/1024:.1f} MB")
+        if level == "2":
+            for ts in ts_list:
+                t.add(f"[bold]{ts.name}[/]")
+        elif level == "3":
+            detail_tree = None
+            for ts in ts_list:
+                if ts.name.upper() == detail.upper():
+                    detail_tree = t.add(f"[bold white on red]{ts.name}[/]")
+                    detail_tree.add(f"size={ts.size/1024/1024:.1f} MB")
+                    detail_tree.add("...")
+            if detail_tree is None:
+                # ???? Handle unknown tablespace name in a better way
+                t.add(f'[red on yellow]Failed to find tablespace named "{detail}"')
 
     return t
 
@@ -682,17 +702,22 @@ def produce_tree(
 ):
     my_tree = rich.tree.Tree(f"[bold]Postgres Cluster[/]")
 
-    my_tree.add(get_system_tree(basics))
-    my_tree.add(get_session_tree(basics))
+    my_tree.add(get_system_tree(basics, level="1"))
+    my_tree.add(get_system_tree(basics, level="2"))
+    my_tree.add(get_session_tree(basics, level="1"))
+    my_tree.add(get_session_tree(basics, level="2"))
 
     # For temp dev purposes, add all three different roles output levels: 1=basic, 2=list role names, 3=detail for a specific role name
+
     my_tree.add(get_roles_tree(roles_list, basics.current_user, level="1"))
     my_tree.add(get_roles_tree(roles_list, basics.current_user, level="2"))
     my_tree.add(
         get_roles_tree(roles_list, basics.current_user, level="3", detail="pg_read_server_files")
     )
 
-    my_tree.add(get_tablespaces_tree(ts_list))
+    my_tree.add(get_tablespaces_tree(ts_list, level="1"))
+    my_tree.add(get_tablespaces_tree(ts_list, level="2"))
+    my_tree.add(get_tablespaces_tree(ts_list, level="3", detail="pg_global"))
 
     dbs_tree = my_tree.add(f"[bold]Databases[/] ({len(db_list)}):")
     for db in db_list:
