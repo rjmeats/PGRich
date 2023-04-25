@@ -558,14 +558,14 @@ def main() -> None:
     db_list = DatabaseInfo.read_database_info(conn)
     db_info_str = DatabaseInfo.summarise_databases(db_list, basics.current_database)
     panel = rich.panel.Panel(db_info_str, title="Database info")
-    console.print(panel)
+    # console.print(panel)
 
     sc_list = SchemaInfo.read_schema_info(conn)
     sc_info_str = SchemaInfo.summarise_schemas(sc_list, basics)
     panel = rich.panel.Panel(
         sc_info_str, title=f'Schema info for the current database : "{basics.current_database}"'
     )
-    console.print(panel)
+    # console.print(panel)
 
     # Attach the schema list to the info for the current database
     current_db: Optional[DatabaseInfo] = None
@@ -584,7 +584,7 @@ def main() -> None:
         if len(sc.tables_list) > 0:
             tables_info_str = TableInfo.summarise_tables(sc.tables_list)
             panel = rich.panel.Panel(tables_info_str, title=f"Tables in schema {sc.name}")
-            console.print(panel)
+            # console.print(panel)
 
     produce_tree(basics, roles_list, ts_list, db_list)
 
@@ -694,55 +694,110 @@ def get_tablespaces_tree(ts_list: list[TablespaceInfo], level: str, detail: str 
     return t
 
 
+def get_databases_tree(
+    db_list: list[DatabaseInfo],
+    current_database: str,
+    level: str,
+    detail_type: str = "",
+    detail: str = "",
+):
+    dbs_tree = rich.tree.Tree(f"[bold]Databases[/] ({len(db_list)}):")
+    if level == "1":
+        return dbs_tree
+
+    for db in db_list:
+        if db.name != current_database:
+            db_tree = dbs_tree.add(f"{db.name} : <not visible from this session>", style="dim")
+        else:
+            db_tree = dbs_tree.add(f"[bold]{db.name}[/]")
+            if level == "2":
+                db_tree.add(get_schemas_tree(db.schemas_list, "1"))
+            elif level == "3" and detail_type == "database" and detail == db.name:
+                db_tree.add(get_schemas_tree(db.schemas_list, "2"))
+            else:
+                db_tree.add(get_schemas_tree(db.schemas_list, "1"))
+
+    return dbs_tree
+
+
+def get_schemas_tree(
+    schemas_list: list[SchemaInfo],
+    level: str,
+    detail_type: str = "",
+    detail: str = "",
+):
+    schemas_tree = rich.tree.Tree(f"Schemas ({len(schemas_list)}):")
+
+    for schema in schemas_list:
+        name_for_display = schema.name if schema.is_system() else f"[bold]{schema.name}[/]"
+        expand = not schema.is_system()
+        if level == "1":
+            schema_tree = schemas_tree.add(f"{name_for_display} : tables={len(schema.tables_list)}")
+            continue
+        elif level == "2":
+            schema_tree = schemas_tree.add(f"{name_for_display}")
+            tables_tree = schema_tree.add(f"Tables ({len(schema.tables_list)}):")
+            # tables_tree = schema_tree.add(
+            #    expanded=True,
+            #    guide_style="underline2 bright_blue",
+            # )
+            # for t in schema.tables_list:
+            #    table_tree = tables_tree.add(f"{t.name}")
+            views_tree = schema_tree.add(f"Views ({len(schema.views_list)}):")
+            # for v in schema.views_list:
+            #    views_tree.add(v.name)
+            # indexes_tree = schema_tree.add(f"Indexes ({len(schema.indexes_list)}):", expanded=expand)
+
+    return schemas_tree
+
+
 def produce_tree(
     basics: BasicSessionInfo,
     roles_list: list[RoleInfo],
     ts_list: list[TablespaceInfo],
     db_list: list[DatabaseInfo],
 ):
+    option = ""
+    option_detail = ""
+
+    level = "1"
+
+    level = "2" if option == "" else "1"
+
     my_tree = rich.tree.Tree(f"[bold]Postgres Cluster[/]")
 
-    my_tree.add(get_system_tree(basics, level="1"))
-    my_tree.add(get_system_tree(basics, level="2"))
-    my_tree.add(get_session_tree(basics, level="1"))
-    my_tree.add(get_session_tree(basics, level="2"))
+    my_tree.add(get_system_tree(basics, level=level))
+    my_tree.add(get_session_tree(basics, level=level))
 
     # For temp dev purposes, add all three different roles output levels: 1=basic, 2=list role names, 3=detail for a specific role name
 
-    my_tree.add(get_roles_tree(roles_list, basics.current_user, level="1"))
-    my_tree.add(get_roles_tree(roles_list, basics.current_user, level="2"))
+    role_level = level
+    if level == "1" and option.lower() in ["role"]:
+        role_level = "3"
+
     my_tree.add(
-        get_roles_tree(roles_list, basics.current_user, level="3", detail="pg_read_server_files")
+        get_roles_tree(roles_list, basics.current_user, level=role_level, detail=option_detail)
     )
 
-    my_tree.add(get_tablespaces_tree(ts_list, level="1"))
-    my_tree.add(get_tablespaces_tree(ts_list, level="2"))
-    my_tree.add(get_tablespaces_tree(ts_list, level="3", detail="pg_global"))
+    ts_level = level
+    if level == "1" and option.lower() in ["ts", "tablespace"]:
+        ts_level = "3"
 
-    dbs_tree = my_tree.add(f"[bold]Databases[/] ({len(db_list)}):")
-    for db in db_list:
-        if db.name != basics.current_database:
-            db_tree = dbs_tree.add(f"{db.name} : <not visible from this session>", style="dim")
-        else:
-            db_tree = dbs_tree.add(f"[bold]{db.name}[/]")
-            schemas_tree = db_tree.add(f"Schemas ({len(db.schemas_list)}):", expanded=True)
-            for schema in db.schemas_list:
-                name_for_display = schema.name if schema.is_system() else f"[bold]{schema.name}[/]"
-                expand = not schema.is_system()
-                schema_tree = schemas_tree.add(name_for_display, expanded=expand)
-                tables_tree = schema_tree.add(
-                    f"[bright_blue]Tables ({len(schema.tables_list)}):",
-                    expanded=True,
-                    guide_style="underline2 bright_blue",
-                )
-                for t in schema.tables_list:
-                    table_tree = tables_tree.add(f"{t.name}")
-                views_tree = schema_tree.add(f"Views ({len(schema.views_list)}):", expanded=expand)
-                for v in schema.views_list:
-                    views_tree.add(v.name)
-                indexes_tree = schema_tree.add(
-                    f"Indexes ({len(schema.indexes_list)}):", expanded=expand
-                )
+    my_tree.add(get_tablespaces_tree(ts_list, level=ts_level, detail=option_detail))
+
+    db_level = level
+    if level == "1" and option.lower() in ["db", "database"]:
+        db_level = "3"
+
+    my_tree.add(
+        get_databases_tree(
+            db_list,
+            basics.current_database,
+            level=db_level,
+            detail_type=option,
+            detail=option_detail,
+        )
+    )
 
     panel = rich.panel.Panel(my_tree, title=f"[bold]Cluster Summary[/]")
     console.print(panel)
