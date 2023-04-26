@@ -589,61 +589,129 @@ def main() -> None:
     produce_tree(basics, roles_list, ts_list, db_list)
 
 
-def get_system_tree(basics: BasicSessionInfo, level: str, detail: str = ""):
-    if level == "1":
-        t = rich.tree.Tree(f"[bold]System[/]: {basics.cluster_name}")
-    else:
+def get_system_tree(
+    basics: BasicSessionInfo,
+    level: str,
+    detail_type: str = "",
+    detail: str = "",
+) -> rich.tree.Tree:
+    if level == "overview":
         t = rich.tree.Tree(f"[bold]System[/]:")
         t.add(f"Cluster name: {basics.cluster_name}")
         t.add(f"Postgres version: {basics.pg_version}")
+    elif level == "specific":
+        t = rich.tree.Tree(f"[bold]System[/]: {basics.cluster_name}")
+    else:
+        t = rich.tree.Tree(f"[bold]System[/]: {basics.cluster_name}")
+        t.add(f"[red on yellow]Unknown level[/]: {level}")
 
     return t
 
 
-def get_session_tree(basics: BasicSessionInfo, level: str, detail: str = ""):
-    if level == "1":
-        t = rich.tree.Tree(f"[bold]This session[/]: User = {basics.current_user}")
-    else:
+def get_session_tree(
+    basics: BasicSessionInfo,
+    level: str,
+    detail_type: str = "",
+    detail: str = "",
+) -> rich.tree.Tree:
+    if level == "overview":
         t = rich.tree.Tree("[bold]This session[/]:")
         t.add(f"Current user: {basics.current_user}")
         t.add(f"Current database: {basics.current_database}")
         t.add(f"Search path: {basics.search_path}")
         t.add(f"Effective search path: {basics.effective_search_path_list}")
         t.add(f"Psycopg version: {basics.psycopg2_version}")
+    elif level == "specific":
+        t = rich.tree.Tree(f"[bold]This session[/]: User = {basics.current_user}")
+    else:
+        t = rich.tree.Tree(f"[bold]This session[/]: User = {basics.current_user}")
+        t.add(f"[red on yellow]Unknown level[/]: {level}")
 
     return t
 
 
-def get_roles_tree(roles_list: list[RoleInfo], current_user: str, level: str, detail: str = ""):
+def get_roles_tree(
+    roles_list: list[RoleInfo],
+    current_user: str,
+    level: str,
+    specific_item_type: str,
+    specific_item: str,
+) -> rich.tree.Tree:
     super_user_roles: list[tuple[RoleInfo, str]] = []
     other_login_roles: list[tuple[RoleInfo, str]] = []
     other_roles: list[tuple[RoleInfo, str]] = []
-    detail_tree = None
+
+    specific_item_is_super_user = False
+    specific_item_is_login_user = False
+
     for role in RoleInfo.sort_roles_list(roles_list):
         display_name = role.name
         if role.name == current_user:
             display_name = f"[bold white on blue]{role.name}"
-        if role.name.upper() == detail.upper():
+
+        if (
+            level == "specific"
+            and specific_item_type.lower() == "role"
+            and specific_item.lower() == role.name.lower()
+        ):
             display_name = f"[bold white on red]{role.name}"
-
-        names = (role, display_name)
-        if role.is_super_user:
-            super_user_roles.append(names)
-        elif role.can_login:
-            other_login_roles.append(names)
-        else:
-            other_roles.append(names)
-
-        if level == "3" and role.name.upper() == detail.upper():
             detail_tree = rich.tree.Tree(display_name)
             # Put in some real attributes ????
             detail_tree.add("...")
+            specific_item_is_super_user = role.is_super_user
+            specific_item_is_login_user = role.can_login
+
+        name_tuple = (role, display_name)
+        if role.is_super_user:
+            super_user_roles.append(name_tuple)
+        elif role.can_login:
+            other_login_roles.append(name_tuple)
+        else:
+            other_roles.append(name_tuple)
 
     t = rich.tree.Tree(f"[bold]Roles[/] ({len(roles_list)}):")
+    if level == "overview":
+        super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)}):")
+        for role, display_name in super_user_roles:
+            super_users_tree.add(display_name)
+        other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)}):")
+        for role, display_name in other_login_roles:
+            other_logins_tree.add(display_name)
+        other_roles_tree = t.add(f"Other roles ({len(other_roles)}):")
+    elif level == "specific" and specific_item_type.lower() == "roles":
+        super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)}):")
+        for role, display_name in super_user_roles:
+            super_users_tree.add(display_name)
+        other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)}):")
+        for role, display_name in other_login_roles:
+            other_logins_tree.add(display_name)
+        other_roles_tree = t.add(f"Other roles ({len(other_roles)}):")
+        for role, display_name in other_roles:
+            other_roles_tree.add(display_name)
+    elif level == "specific" and specific_item_type.lower() == "role":
+        super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)}):")
+        other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)}):")
+        other_roles_tree = t.add(f"Other roles ({len(other_roles)}):")
 
+        if detail_tree != None:
+            if specific_item_is_super_user:
+                super_users_tree.add(detail_tree)
+            elif specific_item_is_login_user:
+                other_logins_tree.add(detail_tree)
+            else:
+                other_roles_tree.add(detail_tree)
+        else:
+            t.add(f'[red on yellow]Failed to find role named "{specific_item}"')
+    elif level == "specific":
+        pass
+        # Nothing more to add, just the basic count
+    else:
+        t.add(f"[red on yellow]Unknown level[/]: {level}")
+
+    """
     if detail != "" and detail_tree == None:
         # ???? Handle unknown role name in a better way
-        t.add(f'[red on yellow]Failed to find role named "{detail}"')
+        t.add(f'[red on yellow]Failed to find role named "{specific_item}"')
 
     super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)}):")
     for role, display_name in super_user_roles:
@@ -669,6 +737,7 @@ def get_roles_tree(roles_list: list[RoleInfo], current_user: str, level: str, de
         elif level == "3" and use_detail and detail_tree is not None:
             other_roles_tree.add(detail_tree)
 
+    """
     return t
 
 
@@ -757,26 +826,24 @@ def produce_tree(
     ts_list: list[TablespaceInfo],
     db_list: list[DatabaseInfo],
 ):
-    option = ""
-    option_detail = ""
+    option = "role"
+    option_detail = "pg_read_all_data"
 
-    level = "1"
-
-    level = "2" if option == "" else "1"
+    level = "overview" if option == "" else "specific"
 
     my_tree = rich.tree.Tree(f"[bold]Postgres Cluster[/]")
 
     my_tree.add(get_system_tree(basics, level=level))
     my_tree.add(get_session_tree(basics, level=level))
 
-    # For temp dev purposes, add all three different roles output levels: 1=basic, 2=list role names, 3=detail for a specific role name
-
-    role_level = level
-    if level == "1" and option.lower() in ["role"]:
-        role_level = "3"
-
     my_tree.add(
-        get_roles_tree(roles_list, basics.current_user, level=role_level, detail=option_detail)
+        get_roles_tree(
+            roles_list,
+            basics.current_user,
+            level=level,
+            specific_item_type=option,
+            specific_item=option_detail,
+        )
     )
 
     ts_level = level
