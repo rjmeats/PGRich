@@ -521,7 +521,7 @@ def main() -> None:
 
     # If turned on, the second time round the loop does a 'set role' to the built-in read-only role, and shows how
     # this modifies the 'Current user' value reported.
-    switch_to_read_role = False
+    switch_to_read_role = True
 
     for i in [1, 2] if switch_to_read_role else [1]:
         if i == 2:
@@ -596,7 +596,7 @@ def get_system_tree(
     detail: str = "",
 ) -> rich.tree.Tree:
     if level == "overview":
-        t = rich.tree.Tree(f"[bold]System[/]:")
+        t = rich.tree.Tree(f"[bold]System[/]")
         t.add(f"Cluster name: {basics.cluster_name}")
         t.add(f"Postgres version: {basics.pg_version}")
     elif level == "specific":
@@ -615,7 +615,7 @@ def get_session_tree(
     detail: str = "",
 ) -> rich.tree.Tree:
     if level == "overview":
-        t = rich.tree.Tree("[bold]This session[/]:")
+        t = rich.tree.Tree("[bold]This session[/]")
         t.add(f"Current user: {basics.current_user}")
         t.add(f"Current database: {basics.current_database}")
         t.add(f"Search path: {basics.search_path}")
@@ -669,29 +669,32 @@ def get_roles_tree(
         else:
             other_roles.append(name_tuple)
 
-    t = rich.tree.Tree(f"[bold]Roles[/] ({len(roles_list)}):")
+    t = rich.tree.Tree(f"[bold]Roles[/] ({len(roles_list)})")
     if level == "overview":
-        super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)}):")
+        super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)})")
         for role, display_name in super_user_roles:
             super_users_tree.add(display_name)
-        other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)}):")
+        other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)})")
         for role, display_name in other_login_roles:
             other_logins_tree.add(display_name)
-        other_roles_tree = t.add(f"Other roles ({len(other_roles)}):")
+        other_roles_tree = t.add(f"Other roles ({len(other_roles)})")
+        for role, display_name in other_roles:
+            if role.name == current_user:
+                other_roles_tree.add(display_name)
     elif level == "specific" and specific_item_type.lower() == "roles":
-        super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)}):")
+        super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)})")
         for role, display_name in super_user_roles:
             super_users_tree.add(display_name)
-        other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)}):")
+        other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)})")
         for role, display_name in other_login_roles:
             other_logins_tree.add(display_name)
-        other_roles_tree = t.add(f"Other roles ({len(other_roles)}):")
+        other_roles_tree = t.add(f"Other roles ({len(other_roles)})")
         for role, display_name in other_roles:
             other_roles_tree.add(display_name)
     elif level == "specific" and specific_item_type.lower() == "role":
-        super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)}):")
-        other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)}):")
-        other_roles_tree = t.add(f"Other roles ({len(other_roles)}):")
+        super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)})")
+        other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)})")
+        other_roles_tree = t.add(f"Other roles ({len(other_roles)})")
 
         if detail_tree != None:
             if specific_item_is_super_user:
@@ -704,61 +707,32 @@ def get_roles_tree(
             t.add(f'[red on yellow]Failed to find role named "{specific_item}"')
     elif level == "specific":
         pass
-        # Nothing more to add, just the basic count
     else:
         t.add(f"[red on yellow]Unknown level[/]: {level}")
 
-    """
-    if detail != "" and detail_tree == None:
-        # ???? Handle unknown role name in a better way
-        t.add(f'[red on yellow]Failed to find role named "{specific_item}"')
-
-    super_users_tree = t.add(f"Super-user roles ({len(super_user_roles)}):")
-    for role, display_name in super_user_roles:
-        use_detail = role.name.upper() == detail.upper()
-        if level == "3" and use_detail and detail_tree is not None:
-            super_users_tree.add(detail_tree)
-        else:
-            super_users_tree.add(display_name)
-
-    other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)}):")
-    for role, display_name in other_login_roles:
-        use_detail = role.name.upper() == detail.upper()
-        if level == "2":
-            other_logins_tree.add(display_name)
-        elif level == "3" and use_detail and detail_tree is not None:
-            other_logins_tree.add(detail_tree)
-
-    other_roles_tree = t.add(f"Other roles ({len(other_roles)}):")
-    for role, display_name in other_roles:
-        use_detail = role.name.upper() == detail.upper()
-        if level == "2":
-            other_roles_tree.add(display_name)
-        elif level == "3" and use_detail and detail_tree is not None:
-            other_roles_tree.add(detail_tree)
-
-    """
     return t
 
 
-def get_tablespaces_tree(ts_list: list[TablespaceInfo], level: str, detail: str = ""):
+def get_tablespaces_tree(
+    ts_list: list[TablespaceInfo],
+    level: str,
+    specific_item_type: str,
+    specific_item: str,
+) -> rich.tree.Tree:
     if len(ts_list) == 0:
         t = rich.tree.Tree(f"Tablespaces : <not visible from this session>", style="dim")
+        return t
+
+    t = rich.tree.Tree(f"[bold]Tablespaces[/] ({len(ts_list)})")
+    if level == "overview":
+        for ts in ts_list:
+            t.add(f"[bold]{ts.name}[/]")
+    elif level == "specific" and specific_item_type.lower() == "tablespaces":
+        for ts in ts_list:
+            detail_tree = t.add(f"[bold]{ts.name}[/]")
+            detail_tree.add(f"size={ts.size/1024/1024:.1f} MB")
     else:
-        t = rich.tree.Tree(f"[bold]Tablespaces[/] ({len(ts_list)}):")
-        if level == "2":
-            for ts in ts_list:
-                t.add(f"[bold]{ts.name}[/]")
-        elif level == "3":
-            detail_tree = None
-            for ts in ts_list:
-                if ts.name.upper() == detail.upper():
-                    detail_tree = t.add(f"[bold white on red]{ts.name}[/]")
-                    detail_tree.add(f"size={ts.size/1024/1024:.1f} MB")
-                    detail_tree.add("...")
-            if detail_tree is None:
-                # ???? Handle unknown tablespace name in a better way
-                t.add(f'[red on yellow]Failed to find tablespace named "{detail}"')
+        pass
 
     return t
 
@@ -770,7 +744,7 @@ def get_databases_tree(
     detail_type: str = "",
     detail: str = "",
 ):
-    dbs_tree = rich.tree.Tree(f"[bold]Databases[/] ({len(db_list)}):")
+    dbs_tree = rich.tree.Tree(f"[bold]Databases[/] ({len(db_list)})")
     if level == "1":
         return dbs_tree
 
@@ -795,7 +769,7 @@ def get_schemas_tree(
     detail_type: str = "",
     detail: str = "",
 ):
-    schemas_tree = rich.tree.Tree(f"Schemas ({len(schemas_list)}):")
+    schemas_tree = rich.tree.Tree(f"Schemas ({len(schemas_list)})")
 
     for schema in schemas_list:
         name_for_display = schema.name if schema.is_system() else f"[bold]{schema.name}[/]"
@@ -805,7 +779,7 @@ def get_schemas_tree(
             continue
         elif level == "2":
             schema_tree = schemas_tree.add(f"{name_for_display}")
-            tables_tree = schema_tree.add(f"Tables ({len(schema.tables_list)}):")
+            tables_tree = schema_tree.add(f"Tables ({len(schema.tables_list)})")
             # tables_tree = schema_tree.add(
             #    expanded=True,
             #    guide_style="underline2 bright_blue",
@@ -826,8 +800,8 @@ def produce_tree(
     ts_list: list[TablespaceInfo],
     db_list: list[DatabaseInfo],
 ):
-    option = "role"
-    option_detail = "pg_read_all_data"
+    option = ""
+    option_detail = ""
 
     level = "overview" if option == "" else "specific"
 
@@ -846,11 +820,14 @@ def produce_tree(
         )
     )
 
-    ts_level = level
-    if level == "1" and option.lower() in ["ts", "tablespace"]:
-        ts_level = "3"
-
-    my_tree.add(get_tablespaces_tree(ts_list, level=ts_level, detail=option_detail))
+    my_tree.add(
+        get_tablespaces_tree(
+            ts_list,
+            level=level,
+            specific_item_type=option,
+            specific_item=option_detail,
+        )
+    )
 
     db_level = level
     if level == "1" and option.lower() in ["db", "database"]:
