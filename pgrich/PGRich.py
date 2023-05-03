@@ -741,24 +741,27 @@ def get_databases_tree(
     db_list: list[DatabaseInfo],
     current_database: str,
     level: str,
-    detail_type: str = "",
-    detail: str = "",
-):
+    specific_item_type: str,
+    specific_item: str,
+) -> rich.tree.Tree:
     dbs_tree = rich.tree.Tree(f"[bold]Databases[/] ({len(db_list)})")
-    if level == "1":
-        return dbs_tree
 
     for db in db_list:
         if db.name != current_database:
             db_tree = dbs_tree.add(f"{db.name} : <not visible from this session>", style="dim")
         else:
-            db_tree = dbs_tree.add(f"[bold]{db.name}[/]")
-            if level == "2":
-                db_tree.add(get_schemas_tree(db.schemas_list, "1"))
-            elif level == "3" and detail_type == "database" and detail == db.name:
-                db_tree.add(get_schemas_tree(db.schemas_list, "2"))
+            if (
+                level == "specific"
+                and specific_item_type.lower() == "database"
+                and specific_item.lower() == db.name.lower()
+            ):
+                name_for_display = f"[bold white on red]{db.name}[/]"
+                level = "db_overview"
             else:
-                db_tree.add(get_schemas_tree(db.schemas_list, "1"))
+                name_for_display = f"[bold]{db.name}[/]"
+            db_tree = dbs_tree.add(f"{name_for_display}")
+
+            db_tree.add(get_schemas_tree(db.schemas_list, level, specific_item_type, specific_item))
 
     return dbs_tree
 
@@ -766,30 +769,47 @@ def get_databases_tree(
 def get_schemas_tree(
     schemas_list: list[SchemaInfo],
     level: str,
-    detail_type: str = "",
-    detail: str = "",
-):
+    specific_item_type: str,
+    specific_item: str,
+) -> rich.tree.Tree:
     schemas_tree = rich.tree.Tree(f"Schemas ({len(schemas_list)})")
 
+    if level == "overview":
+        return schemas_tree
+
+    specific_schema_found = False
     for schema in schemas_list:
         name_for_display = schema.name if schema.is_system() else f"[bold]{schema.name}[/]"
-        expand = not schema.is_system()
-        if level == "1":
-            schema_tree = schemas_tree.add(f"{name_for_display} : tables={len(schema.tables_list)}")
-            continue
-        elif level == "2":
+        if level == "db_overview":
+            schema_tree = schemas_tree.add(
+                f"{name_for_display} : tables={len(schema.tables_list)} views={len(schema.views_list)}"
+            )
+        elif level == "specific" and specific_item_type.lower() == "schemas":
+            schema_tree = schemas_tree.add(
+                f"{name_for_display} : tables={len(schema.tables_list)} views={len(schema.views_list)}"
+            )
+        elif (
+            level == "specific"
+            and specific_item_type.lower() == "schema"
+            and specific_item.lower() == schema.name
+        ):
+            specific_schema_found = True
+            name_for_display = f"[bold white on red]{schema.name}[/]"
             schema_tree = schemas_tree.add(f"{name_for_display}")
             tables_tree = schema_tree.add(f"Tables ({len(schema.tables_list)})")
-            # tables_tree = schema_tree.add(
-            #    expanded=True,
-            #    guide_style="underline2 bright_blue",
-            # )
-            # for t in schema.tables_list:
-            #    table_tree = tables_tree.add(f"{t.name}")
-            views_tree = schema_tree.add(f"Views ({len(schema.views_list)}):")
-            # for v in schema.views_list:
-            #    views_tree.add(v.name)
-            # indexes_tree = schema_tree.add(f"Indexes ({len(schema.indexes_list)}):", expanded=expand)
+            for t in schema.tables_list:
+                table_tree = tables_tree.add(t.name)
+            views_tree = schema_tree.add(f"Views ({len(schema.views_list)})")
+            for v in schema.views_list:
+                view_tree = views_tree.add(v.name)
+            indexes_tree = schema_tree.add(f"Indexes ({len(schema.indexes_list)})")
+        elif level == "specific" and specific_item_type.lower() == "schema":
+            schema_tree = schemas_tree.add(
+                f"{name_for_display} : tables={len(schema.tables_list)} views={len(schema.views_list)}"
+            )
+
+    if level == "specific" and specific_item_type.lower() == "schema" and not specific_schema_found:
+        schemas_tree.add(f'[red on yellow]Failed to find schema named "{specific_item}"')
 
     return schemas_tree
 
@@ -800,8 +820,8 @@ def produce_tree(
     ts_list: list[TablespaceInfo],
     db_list: list[DatabaseInfo],
 ):
-    option = ""
-    option_detail = ""
+    option = "schema"
+    option_detail = "information_schema"
 
     level = "overview" if option == "" else "specific"
 
@@ -829,17 +849,13 @@ def produce_tree(
         )
     )
 
-    db_level = level
-    if level == "1" and option.lower() in ["db", "database"]:
-        db_level = "3"
-
     my_tree.add(
         get_databases_tree(
             db_list,
             basics.current_database,
-            level=db_level,
-            detail_type=option,
-            detail=option_detail,
+            level=level,
+            specific_item_type=option,
+            specific_item=option_detail,
         )
     )
 
