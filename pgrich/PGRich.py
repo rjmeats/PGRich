@@ -403,6 +403,7 @@ class ViewInfo:
         self.name = name
         self.owner = owner
         self.definition = definition
+        self.column_list: list[ColumnInfo] = []
 
     # https://www.postgresql.org/docs/15/view-pg-views.html
     def read_view_info_for_schema(conn: pg_connection_type, schema_name: str) -> list[ViewInfo]:
@@ -414,6 +415,9 @@ class ViewInfo:
         cur.execute(query)
 
         l = [ViewInfo(schema_name, record[0], record[1], record[2]) for record in cur]
+
+        for vi in l:
+            vi.column_list = ColumnInfo.read_column_info_for_table(conn, schema_name, vi.name)
 
         return l
 
@@ -465,6 +469,7 @@ class ColumnInfo:
         name: str,
         type: str,
         length: int,
+        typmodlen: int,
         not_null: bool,
         ordering: int,
     ):
@@ -472,6 +477,7 @@ class ColumnInfo:
         self.table_name = table_name
         self.name = name
         self.type = type
+        self.typmodlen = typmodlen
         self.length = length
         self.not_null = not_null
         self.ordering = ordering
@@ -481,7 +487,7 @@ class ColumnInfo:
         conn: pg_connection_type, schema_name: str, table_name: str
     ) -> list[ColumnInfo]:
         cur = conn.cursor()
-        query = f"""select a.attname, typ.typname, a.attlen, a.attnotnull, a.attnum
+        query = f"""select a.attname, typ.typname, a.attlen, a.atttypmod, a.attnotnull, a.attnum
                 from pg_attribute a
                 join pg_class c on a.attrelid = c.oid 
                 join pg_type typ on a.atttypid = typ.oid
@@ -494,7 +500,14 @@ class ColumnInfo:
 
         l = [
             ColumnInfo(
-                schema_name, table_name, record[0], record[1], record[2], record[3], record[4]
+                schema_name,
+                table_name,
+                record[0],
+                record[1],
+                record[2],
+                record[3],
+                record[4],
+                record[5],
             )
             for record in cur
         ]
@@ -807,11 +820,65 @@ def get_schemas_tree(
             schema_tree = schemas_tree.add(
                 f"{name_for_display} : tables={len(schema.tables_list)} views={len(schema.views_list)}"
             )
+        elif level == "specific" and specific_item_type.lower() == "table":
+            for t in schema.tables_list:
+                if t.name.lower() == specific_item:
+                    schema_tree = schemas_tree.add(f"{name_for_display}")
+                    tables_tree = schema_tree.add(f"Tables ({len(schema.tables_list)})")
+                    tables_tree.add(get_table_tree(t))
+                    # table_tree = tables_tree.add(t.name)
+        elif level == "specific" and specific_item_type.lower() == "view":
+            for v in schema.views_list:
+                if v.name.lower() == specific_item:
+                    schema_tree = schemas_tree.add(f"{name_for_display}")
+                    views_tree = schema_tree.add(f"Views ({len(schema.views_list)})")
+                    views_tree.add(get_view_tree(v))
+                    # view_tree = views_tree.add(v.name)
 
     if level == "specific" and specific_item_type.lower() == "schema" and not specific_schema_found:
         schemas_tree.add(f'[red on yellow]Failed to find schema named "{specific_item}"')
 
     return schemas_tree
+
+
+def get_table_tree(
+    table: TableInfo,
+) -> rich.tree.Tree:
+    table_tree = rich.tree.Tree(f"[bold white on red]{table.name}[/]")
+    table_tree.add(get_columns_tree(table.column_list))
+    table_tree.add(get_indexes_tree(table.index_list))
+    return table_tree
+
+
+def get_columns_tree(
+    columns_list: list[ColumnInfo],
+) -> rich.tree.Tree:
+    columns_tree = rich.tree.Tree(f"Columns ({len(columns_list)})")
+    for col in columns_list:
+        column_info = f"{col.name} {col.type} {col.length} {col.typmodlen}"
+        if col.not_null:
+            column_info = f"{column_info} not null"
+        columns_tree.add(column_info)
+    return columns_tree
+
+
+def get_indexes_tree(
+    indexes_list: list[IndexInfo],
+) -> rich.tree.Tree:
+    indexes_tree = rich.tree.Tree(f"Indexes ({len(indexes_list)})")
+    for index in indexes_list:
+        index_info = f"{index.name}"
+        index_tree = indexes_tree.add(index_info)
+        index_tree.add(f"{index.definition}")
+    return indexes_tree
+
+
+def get_view_tree(
+    view: ViewInfo,
+) -> rich.tree.Tree:
+    view_tree = rich.tree.Tree(f"[bold white on red]{view.name}[/]")
+    view_tree.add(get_columns_tree(view.column_list))
+    return view_tree
 
 
 def produce_tree(
@@ -820,8 +887,10 @@ def produce_tree(
     ts_list: list[TablespaceInfo],
     db_list: list[DatabaseInfo],
 ):
-    option = "schema"
-    option_detail = "information_schema"
+    option = "table"
+    option_detail = "pg_class"
+    # option = "schema"
+    # option_detail = "pg_catalog"
 
     level = "overview" if option == "" else "specific"
 
