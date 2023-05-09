@@ -534,7 +534,7 @@ def main() -> None:
 
     # If turned on, the second time round the loop does a 'set role' to the built-in read-only role, and shows how
     # this modifies the 'Current user' value reported.
-    switch_to_read_role = True
+    switch_to_read_role = False
 
     for i in [1, 2] if switch_to_read_role else [1]:
         if i == 2:
@@ -773,6 +773,7 @@ def get_databases_tree(
             else:
                 name_for_display = f"[bold]{db.name}[/]"
             db_tree = dbs_tree.add(f"{name_for_display}")
+            db_tree.add(f"Default tablespace: {db.default_tablespace}")
 
             db_tree.add(get_schemas_tree(db.schemas_list, level, specific_item_type, specific_item))
 
@@ -791,6 +792,7 @@ def get_schemas_tree(
         return schemas_tree
 
     specific_schema_found = False
+    specific_item_found = False
     for schema in schemas_list:
         name_for_display = schema.name if schema.is_system() else f"[bold]{schema.name}[/]"
         if level == "db_overview":
@@ -823,20 +825,28 @@ def get_schemas_tree(
         elif level == "specific" and specific_item_type.lower() == "table":
             for t in schema.tables_list:
                 if t.name.lower() == specific_item:
+                    specific_item_found = True
                     schema_tree = schemas_tree.add(f"{name_for_display}")
                     tables_tree = schema_tree.add(f"Tables ({len(schema.tables_list)})")
                     tables_tree.add(get_table_tree(t))
-                    # table_tree = tables_tree.add(t.name)
         elif level == "specific" and specific_item_type.lower() == "view":
             for v in schema.views_list:
                 if v.name.lower() == specific_item:
+                    specific_item_found = True
                     schema_tree = schemas_tree.add(f"{name_for_display}")
                     views_tree = schema_tree.add(f"Views ({len(schema.views_list)})")
                     views_tree.add(get_view_tree(v))
-                    # view_tree = views_tree.add(v.name)
 
     if level == "specific" and specific_item_type.lower() == "schema" and not specific_schema_found:
         schemas_tree.add(f'[red on yellow]Failed to find schema named "{specific_item}"')
+    elif (
+        level == "specific"
+        and specific_item_type.lower() in ["table", "view"]
+        and not specific_item_found
+    ):
+        schemas_tree.add(
+            f'[red on yellow]Failed to find {specific_item_type} named "{specific_item}"'
+        )
 
     return schemas_tree
 
@@ -845,6 +855,10 @@ def get_table_tree(
     table: TableInfo,
 ) -> rich.tree.Tree:
     table_tree = rich.tree.Tree(f"[bold white on red]{table.name}[/]")
+    if table.tablespace_name is not None:
+        table_tree.add(f"Tablespace: {table.tablespace_name}")
+    else:
+        table_tree.add(f"Tablespace: <database default>")
     table_tree.add(get_columns_tree(table.column_list))
     table_tree.add(get_indexes_tree(table.index_list))
     return table_tree
@@ -891,6 +905,8 @@ def produce_tree(
     option_detail = "pg_class"
     # option = "schema"
     # option_detail = "pg_catalog"
+    # option = "database"
+    # option_detail = "postgres"
 
     level = "overview" if option == "" else "specific"
 
