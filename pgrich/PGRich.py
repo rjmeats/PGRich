@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import Optional, Self, TypeAlias
 
 import psycopg2
@@ -515,7 +516,53 @@ class ColumnInfo:
         return l
 
 
-def main() -> None:
+known_options = [
+    "",
+    "overview",
+    "system",
+    "connection",
+    "roles",
+    "role",
+    "databases",
+    "database",
+    "schemas",
+    "schema",
+    "table",
+    "view",
+]
+
+needs_detail_options = ["role", "database", "schema", "table", "view"]
+
+
+def check_args(argv: list[str]):
+    option = ""
+    option_detail = ""
+    if len(argv) >= 2:
+        option = argv[1]
+    if len(argv) >= 3:
+        option_detail = argv[2]
+
+    option_lower = option.lower()
+    if option_lower not in known_options:
+        rich.print(f"[red on yellow]** unknown option '{option}'")
+        rich.print(f"Known options are: {known_options}")
+        return None, None
+    elif option_lower in needs_detail_options and option_detail == "":
+        rich.print(f"[red on yellow]** '{option}' option needs a detail argument")
+        return None, None
+    elif option_lower not in needs_detail_options and option_detail != "":
+        rich.print(f"[red on yellow]** '{option}' option has no detail argument")
+        return None, None
+
+    return option_lower, option_detail
+
+
+def main(argv: list[str]) -> None:
+    option, option_detail = check_args(argv)
+
+    if option == None:
+        return
+
     connection_string: Optional[str] = get_connection_string()
 
     if connection_string == None:
@@ -550,34 +597,34 @@ def main() -> None:
         basics: BasicSessionInfo = result[0]
         basics_str: str = result[1]
 
-        panel = rich.panel.Panel(basics_str, title="Session info")
+        # panel = rich.panel.Panel(basics_str, title="Session info")
         # console.print(panel)
 
     # Show info about the connection
-    conn_info_str = summarise_connection_info(conn)
-    panel = rich.panel.Panel(conn_info_str, title="Connection info")
+    # conn_info_str = summarise_connection_info(conn)
+    # panel = rich.panel.Panel(conn_info_str, title="Connection info")
     # console.print(panel)
 
     roles_list = RoleInfo.read_role_info(conn)
-    roles_info_str = RoleInfo.summarise_roles(roles_list, basics.current_user)
-    panel = rich.panel.Panel(roles_info_str, title="Roles info")
+    # roles_info_str = RoleInfo.summarise_roles(roles_list, basics.current_user)
+    # panel = rich.panel.Panel(roles_info_str, title="Roles info")
     # console.print(panel)
 
     ts_list = TablespaceInfo.read_tablespace_info(conn)
-    ts_info_str = TablespaceInfo.summarise_tablespaces(ts_list)
-    panel = rich.panel.Panel(ts_info_str, title="Tablespace info")
+    # ts_info_str = TablespaceInfo.summarise_tablespaces(ts_list)
+    # panel = rich.panel.Panel(ts_info_str, title="Tablespace info")
     # console.print(panel)
 
     db_list = DatabaseInfo.read_database_info(conn)
-    db_info_str = DatabaseInfo.summarise_databases(db_list, basics.current_database)
-    panel = rich.panel.Panel(db_info_str, title="Database info")
+    # db_info_str = DatabaseInfo.summarise_databases(db_list, basics.current_database)
+    # panel = rich.panel.Panel(db_info_str, title="Database info")
     # console.print(panel)
 
     sc_list = SchemaInfo.read_schema_info(conn)
-    sc_info_str = SchemaInfo.summarise_schemas(sc_list, basics)
-    panel = rich.panel.Panel(
-        sc_info_str, title=f'Schema info for the current database : "{basics.current_database}"'
-    )
+    # sc_info_str = SchemaInfo.summarise_schemas(sc_list, basics)
+    # panel = rich.panel.Panel(
+    #    sc_info_str, title=f'Schema info for the current database : "{basics.current_database}"'
+    # )
     # console.print(panel)
 
     # Attach the schema list to the info for the current database
@@ -593,13 +640,13 @@ def main() -> None:
         console.print(f"[red]** failed to identify the current database {basics.current_database}")
 
     # target_schema = "pg_catalog"
-    for sc in sc_list:
-        if len(sc.tables_list) > 0:
-            tables_info_str = TableInfo.summarise_tables(sc.tables_list)
-            panel = rich.panel.Panel(tables_info_str, title=f"Tables in schema {sc.name}")
-            # console.print(panel)
+    # for sc in sc_list:
+    #    if len(sc.tables_list) > 0:
+    # tables_info_str = TableInfo.summarise_tables(sc.tables_list)
+    # panel = rich.panel.Panel(tables_info_str, title=f"Tables in schema {sc.name}")
+    # console.print(panel)
 
-    produce_tree(basics, roles_list, ts_list, db_list)
+    produce_tree(option, option_detail, basics, roles_list, ts_list, db_list)
 
 
 def get_system_tree(
@@ -656,6 +703,7 @@ def get_roles_tree(
 
     specific_item_is_super_user = False
     specific_item_is_login_user = False
+    detail_tree = None
 
     for role in RoleInfo.sort_roles_list(roles_list):
         display_name = role.name
@@ -709,7 +757,7 @@ def get_roles_tree(
         other_logins_tree = t.add(f"Other login roles ({len(other_login_roles)})")
         other_roles_tree = t.add(f"Other roles ({len(other_roles)})")
 
-        if detail_tree != None:
+        if detail_tree is not None:
             if specific_item_is_super_user:
                 super_users_tree.add(detail_tree)
             elif specific_item_is_login_user:
@@ -892,22 +940,20 @@ def get_view_tree(
 ) -> rich.tree.Tree:
     view_tree = rich.tree.Tree(f"[bold white on red]{view.name}[/]")
     view_tree.add(get_columns_tree(view.column_list))
+    view_definition_tree = view_tree.add("Definition")
+    view_definition_tree.add(view.definition)
+
     return view_tree
 
 
 def produce_tree(
+    option: str,
+    option_detail: str,
     basics: BasicSessionInfo,
     roles_list: list[RoleInfo],
     ts_list: list[TablespaceInfo],
     db_list: list[DatabaseInfo],
 ):
-    option = "table"
-    option_detail = "pg_class"
-    # option = "schema"
-    # option_detail = "pg_catalog"
-    # option = "database"
-    # option_detail = "postgres"
-
     level = "overview" if option == "" else "specific"
 
     my_tree = rich.tree.Tree(f"[bold]Postgres Cluster[/]")
@@ -944,9 +990,12 @@ def produce_tree(
         )
     )
 
-    panel = rich.panel.Panel(my_tree, title=f"[bold]Cluster Summary[/]")
+    heading_detail = "overview" if level == "overview" else f"{option.lower()}"
+    if option_detail != "":
+        heading_detail = f"{heading_detail} : {option_detail}"
+    panel = rich.panel.Panel(my_tree, title=f"[bold]Cluster Summary - {heading_detail}[/]")
     console.print(panel)
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv)
